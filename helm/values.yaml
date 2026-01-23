@@ -1,0 +1,67 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/vidispine/hull/refs/heads/main/hull/values.schema.json
+
+hull:
+  objects:
+    persistentvolumeclaim:
+      files:
+        # storageClassName: ""  # Uncomment and set if needed
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi
+
+    service:
+      main:
+        type: ClusterIP
+        ports:
+          http:
+            port: 8080
+            targetPort: http
+
+    deployment:
+      main:
+        replicas: 1
+        pod:
+          containers:
+            main:
+              imagePullPolicy: Always
+              image:
+                repository: "ghcr.io/connorsapps/clipboard"
+                tag: "latest"
+              ports:
+                http:
+                  containerPort: 8080
+              envFrom:
+                clipboard:
+                  secretRef:
+                    name: clipboard
+              volumeMounts:
+                files:
+                  name: files
+                  mountPath: /data
+              resources:
+                limits:
+                  cpu: 100m
+                  memory: 128Mi
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+          volumes:
+            files:
+              persistentVolumeClaim:
+                claimName: files
+
+    secret:
+      clipboard:
+        data:
+          CLIPBOARD_PASSWORD:
+            inline: ""  # Set via Terraform
+          MONGODB_URI:
+            inline: ""  # Set via Terraform
+          FILES_DIR:
+            inline: "/data"
+          IS_LOCAL:
+            inline: "false"
+          PORT:
+            inline: "8080"

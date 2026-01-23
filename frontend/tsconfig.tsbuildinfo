@@ -1,0 +1,11 @@
+{
+  "root": [
+    "./src/App.tsx",
+    "./src/Clipboard.tsx",
+    "./src/Files.tsx",
+    "./src/Layout.tsx",
+    "./src/Login.tsx",
+    "./src/main.tsx"
+  ],
+  "version": "5.9.3"
+}

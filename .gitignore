@@ -1,0 +1,11 @@
+# Environment
+.env
+
+# IDE
+.idea/
+.vscode/
+
+# Frontend build output (committed separately or built in Docker)
+frontend/node_modules/
+frontend/dist/
+tmp-files/
