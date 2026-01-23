@@ -7,7 +7,7 @@ Shared clipboard service with WebSocket sync for real-time clipboard sharing acr
 - 📋 Real-time clipboard synchronization via WebSocket
 - 📁 File upload and sharing with resumable uploads (tusd)
 - 🔐 Password-based authentication
-- 💾 Persistent storage with MongoDB (optional) or in-memory
+- 💾 Persistent auth token storage with MongoDB (optional) or in-memory
 - 🚀 Easy deployment with Helm
 - 💩 Vibe coded AI slop
 
@@ -62,5 +62,5 @@ The chart uses [HULL](https://github.com/vidispine/hull) for simplified Kubernet
 Key configuration options:
 
 - `CLIPBOARD_PASSWORD`: Password for authentication (required), The default is `1234`
-- `MONGODB_URI`: MongoDB connection string (optional, uses in-memory if not set)
+- `MONGODB_URI`: MongoDB connection string (optional, uses in-memory token store if not set - auth tokens will be lost on restart)
 - `FILES_DIR`: Directory for file storage (default: `/data`, mounted from PVC)
