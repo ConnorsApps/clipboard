@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Uppy from '@uppy/core'
 import Dashboard from '@uppy/react/dashboard'
@@ -15,8 +15,18 @@ interface FileInfo {
   uploadedAt: string
 }
 
+interface WSMessage {
+  type: string
+  files?: FileInfo[]
+}
+
 function Files() {
   const [files, setFiles] = useState<FileInfo[]>([])
+  const [connected, setConnected] = useState(false)
+  const wsRef = useRef<WebSocket | null>(null)
+  const reconnectTimeoutRef = useRef<number | null>(null)
+  const hasConnectedRef = useRef(false)
+  const isUnmountingRef = useRef(false)
   const [uppy] = useState(() => {
     const token = localStorage.getItem('clipboard_token')
     
@@ -55,10 +65,78 @@ function Files() {
   const navigate = useNavigate()
 
   useEffect(() => {
+    isUnmountingRef.current = false
+
+    // WebSocket connection
+    const connect = () => {
+      // Don't connect if component is unmounting
+      if (isUnmountingRef.current) return
+
+      const token = localStorage.getItem('clipboard_token')
+      if (!token) {
+        navigate('/login')
+        return
+      }
+
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+      const wsUrl = `${protocol}//${window.location.host}/ws?token=${encodeURIComponent(token)}`
+
+      const ws = new WebSocket(wsUrl)
+      wsRef.current = ws
+
+      ws.onopen = () => {
+        hasConnectedRef.current = true
+        setConnected(true)
+      }
+
+      ws.onerror = () => {
+        // If we never successfully connected, treat as auth failure
+        if (!hasConnectedRef.current) {
+          localStorage.removeItem('clipboard_token')
+          navigate('/login')
+        }
+      }
+
+      ws.onclose = (event) => {
+        setConnected(false)
+
+        // Don't reconnect if component is unmounting
+        if (isUnmountingRef.current) return
+
+        // Auth failure codes
+        if (event.code === 1008 || event.code === 4001) {
+          localStorage.removeItem('clipboard_token')
+          navigate('/login')
+          return
+        }
+
+        // Only reconnect if token still exists
+        if (localStorage.getItem('clipboard_token')) {
+          reconnectTimeoutRef.current = window.setTimeout(() => {
+            connect()
+          }, 2000)
+        }
+      }
+
+      ws.onmessage = (event) => {
+        try {
+          const msg: WSMessage = JSON.parse(event.data)
+          if (msg.type === 'files_list' && msg.files) {
+            setFiles(msg.files)
+          }
+        } catch {
+          // Ignore parse errors
+        }
+      }
+    }
+
     // Fetch files on mount
     fetchFiles()
+    
+    // Connect to WebSocket
+    connect()
 
-    // Listen to individual file uploads completing
+    // Listen to individual file uploads completing (fallback)
     uppy.on('upload-success', () => {
       // Small delay to allow backend to finish writing metadata
       setTimeout(() => {
@@ -66,7 +144,16 @@ function Files() {
       }, 1000)
     })
 
-  }, [uppy])
+    return () => {
+      isUnmountingRef.current = true
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current)
+      }
+      if (wsRef.current) {
+        wsRef.current.close()
+      }
+    }
+  }, [uppy, navigate])
 
   const fetchFiles = async () => {
     try {
@@ -137,23 +224,34 @@ function Files() {
   }
 
   return (
-    <div className="w-full max-w-5xl">
-      <div className="bg-dark-800 rounded-2xl p-6 shadow-xl">
-        <h2 className="text-2xl font-bold text-accent-500 mb-6">Upload Files</h2>
+    <div className="w-full max-w-5xl px-2 sm:px-0">
+      <div className="bg-dark-800 rounded-2xl py-6 px-4 sm:px-6 shadow-xl">
+        <div className="flex justify-between items-center mb-4 sm:mb-6">
+          <h2 className="text-xl sm:text-2xl font-bold text-accent-500">Upload Files</h2>
+          <div className="flex items-center gap-2 text-xs text-gray-400">
+            <span
+              className={`w-2 h-2 rounded-full ${
+                connected ? 'bg-green-400' : 'bg-red-400'
+              }`}
+            />
+            <span>{connected ? 'Connected' : 'Disconnected'}</span>
+          </div>
+        </div>
         
         {/* Uppy Dashboard */}
-        <div className="mb-8">
+        <div className="mb-6 sm:mb-8">
           <Dashboard
             uppy={uppy}
             proudlyDisplayPoweredByUppy={false}
             theme="dark"
+            width="100%"
             height={350}
           />
         </div>
 
         {/* Files List */}
-        <div>
-          <h3 className="text-xl font-semibold text-white mb-4">Your Files</h3>
+        <div className="max-h-[50vh] overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <h3 className="text-lg sm:text-xl font-semibold text-white mb-3 sm:mb-4">Your Files</h3>
           {files.length === 0 ? (
             <p className="text-gray-400 text-center py-8">No files uploaded yet</p>
           ) : (
@@ -161,24 +259,24 @@ function Files() {
               {files.map((file) => (
                 <div
                   key={file.id}
-                  className="bg-dark-900 border border-dark-700 rounded-lg p-4 flex items-center justify-between hover:border-accent-500 transition-colors"
+                  className="bg-dark-900 border border-dark-700 rounded-lg p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 hover:border-accent-500 transition-colors"
                 >
-                  <div className="flex-1 min-w-0 mr-4">
+                  <div className="flex-1 min-w-0">
                     <p className="text-white font-medium truncate">{file.name}</p>
                     <p className="text-gray-500 text-sm">
                       {formatFileSize(file.size)} • {formatDate(file.uploadedAt)}
                     </p>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-shrink-0">
                     <button
                       onClick={() => handleDownload(file.id, file.name)}
-                      className="px-4 py-2 bg-accent-500 hover:bg-accent-600 text-white rounded-lg transition-colors text-sm font-semibold"
+                      className="px-3 py-2 sm:px-4 bg-accent-500 hover:bg-accent-600 text-white rounded-lg transition-colors text-sm font-semibold flex-1 sm:flex-none active:scale-[0.98]"
                     >
                       Download
                     </button>
                     <button
                       onClick={() => handleDelete(file.id)}
-                      className="px-4 py-2 bg-red-700 hover:bg-red-800 text-white rounded-lg transition-colors text-sm font-semibold"
+                      className="px-3 py-2 sm:px-4 bg-red-700 hover:bg-red-800 text-white rounded-lg transition-colors text-sm font-semibold flex-1 sm:flex-none active:scale-[0.98]"
                     >
                       Delete
                     </button>

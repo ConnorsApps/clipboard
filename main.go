@@ -66,10 +66,14 @@ func main() {
 	// Initialize services
 	authSvc := auth.New(cfg.Password, tokenStore)
 	clipboardSvc := clipboard.New()
-	filesSvc := files.New(cfg.FilesDir)
+	
+	// Create files service with broadcast callback
+	filesSvc := files.New(cfg.FilesDir, func(filesList []files.FileInfo) {
+		clipboardSvc.BroadcastFilesList(filesList)
+	})
 
-	// Initialize tusd handler
-	tusHandler, err := files.NewTusdHandler(cfg.FilesDir)
+	// Initialize tusd handler with broadcast callback
+	tusHandler, err := files.NewTusdHandler(cfg.FilesDir, filesSvc.BroadcastFilesList)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to create tusd handler")
 	}

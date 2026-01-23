@@ -25,11 +25,16 @@ helm repo update
 ```bash
 # Create a values file with your configuration
 cat > my-values.yaml <<EOF
+# yaml-language-server: $schema=https://raw.githubusercontent.com/vidispine/hull/refs/heads/main/hull/values.schema.json
+
 hull:
   objects:
     persistentvolumeclaim:
       files:
         storageClassName: "your-storage-class"
+        resources:
+          requests:
+            storage: 10Gi
     secret:
       clipboard:
         data:
@@ -49,6 +54,6 @@ The chart uses [HULL](https://github.com/vidispine/hull) for simplified Kubernet
 
 Key configuration options:
 
-- `CLIPBOARD_PASSWORD`: Password for authentication (required)
+- `CLIPBOARD_PASSWORD`: Password for authentication (required), The default is `1234`
 - `MONGODB_URI`: MongoDB connection string (optional, uses in-memory if not set)
 - `FILES_DIR`: Directory for file storage (default: `/data`, mounted from PVC)

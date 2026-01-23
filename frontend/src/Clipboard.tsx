@@ -154,7 +154,8 @@ function Clipboard() {
         onChange={handleContentChange}
         placeholder="Paste or type content here..."
         autoFocus
-        className="w-full min-h-[300px] max-h-[60vh] p-4 text-base bg-dark-900 border-2 border-dark-700 rounded-xl text-white placeholder-gray-500 outline-none focus:border-accent-500 transition-colors resize-y"
+        className="w-full min-h-[300px] max-h-[60vh] p-4 text-base bg-dark-900 border-2 border-dark-700 rounded-xl text-white placeholder-gray-500 outline-none focus:border-accent-500 transition-colors resize-y touch-pan-y"
+        style={{ fontSize: '16px' }}
       />
 
       <div className="flex gap-3 mt-4">

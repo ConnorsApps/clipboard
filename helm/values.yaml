@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/vidispine/hull/refs/heads/main/hull/values.schema.json
 
-hull:
+hull:  
   objects:
     persistentvolumeclaim:
       files:
@@ -25,7 +25,6 @@ hull:
         pod:
           containers:
             main:
-              imagePullPolicy: Always
               image:
                 repository: "ghcr.io/connorsapps/clipboard"
                 tag: "latest"

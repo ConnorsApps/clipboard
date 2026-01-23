@@ -10,9 +10,45 @@ html, body {
 }
 
 /* Extend background behind iOS notch and home indicator */
+/* Only apply left/right/bottom padding - top is handled by fixed navbar */
 body {
-  padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
+  /* Prevent overscroll bounce on body */
+  overscroll-behavior-y: none;
+}
+
+/* iOS smooth scrolling optimizations */
+* {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+/* Smooth momentum scrolling for iOS */
+.overflow-y-auto,
+.overflow-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Fix iOS input zoom issues - prevent zoom on focus */
+input[type="text"],
+input[type="password"],
+input[type="email"],
+input[type="search"],
+textarea {
+  font-size: 16px;
+}
+
+/* Better touch interactions */
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* Enable active states on touch devices */
+button:active,
+a:active {
+  opacity: 0.9;
 }

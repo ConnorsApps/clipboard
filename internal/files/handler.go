@@ -13,13 +13,15 @@ import (
 
 // Service manages file operations
 type Service struct {
-	filesDir string
+	filesDir      string
+	broadcastFunc func([]FileInfo)
 }
 
 // New creates a new files service
-func New(filesDir string) *Service {
+func New(filesDir string, broadcastFunc func([]FileInfo)) *Service {
 	return &Service{
-		filesDir: filesDir,
+		filesDir:      filesDir,
+		broadcastFunc: broadcastFunc,
 	}
 }
 
@@ -43,6 +45,55 @@ func (s *Service) getOriginalFilename(fileID string) string {
 	}
 
 	return fileID
+}
+
+// getFilesList returns the current list of files
+func (s *Service) getFilesList() []FileInfo {
+	files := []FileInfo{}
+
+	// Read all files from the files directory
+	entries, err := os.ReadDir(s.filesDir)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to read files directory")
+		return files
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		// Skip .info files created by tusd
+		if strings.HasSuffix(entry.Name(), ".info") {
+			continue
+		}
+
+		info, err := entry.Info()
+		if err != nil {
+			log.Error().Err(err).Str("file", entry.Name()).Msg("Failed to get file info")
+			continue
+		}
+
+		// Get original filename from .info file
+		originalName := s.getOriginalFilename(entry.Name())
+
+		files = append(files, FileInfo{
+			ID:         entry.Name(),
+			Name:       originalName,
+			Size:       info.Size(),
+			UploadedAt: info.ModTime().Format(time.RFC3339),
+		})
+	}
+
+	return files
+}
+
+// BroadcastFilesList sends the current file list to all WebSocket clients
+func (s *Service) BroadcastFilesList() {
+	if s.broadcastFunc != nil {
+		files := s.getFilesList()
+		s.broadcastFunc(files)
+	}
 }
 
 // HandleFile handles file download and delete operations
@@ -85,6 +136,10 @@ func (s *Service) HandleFile(w http.ResponseWriter, r *http.Request) {
 		}
 
 		log.Info().Str("file", fileID).Msg("File deleted")
+		
+		// Broadcast updated file list to all WebSocket clients
+		s.BroadcastFilesList()
+		
 		w.WriteHeader(http.StatusOK)
 
 	default:
@@ -94,43 +149,7 @@ func (s *Service) HandleFile(w http.ResponseWriter, r *http.Request) {
 
 // ListFiles handles listing all uploaded files
 func (s *Service) ListFiles(w http.ResponseWriter, r *http.Request) {
-	files := []FileInfo{}
-
-	// Read all files from the files directory
-	entries, err := os.ReadDir(s.filesDir)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to read files directory")
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-
-		// Skip .info files created by tusd
-		if strings.HasSuffix(entry.Name(), ".info") {
-			continue
-		}
-
-		info, err := entry.Info()
-		if err != nil {
-			log.Error().Err(err).Str("file", entry.Name()).Msg("Failed to get file info")
-			continue
-		}
-
-		// Get original filename from .info file
-		originalName := s.getOriginalFilename(entry.Name())
-
-		files = append(files, FileInfo{
-			ID:         entry.Name(),
-			Name:       originalName,
-			Size:       info.Size(),
-			UploadedAt: info.ModTime().Format(time.RFC3339),
-		})
-	}
-
+	files := s.getFilesList()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(files)
 }

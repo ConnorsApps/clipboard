@@ -14,12 +14,15 @@ const (
 	Update WSMessageType = "update"
 	// Clear indicates a clipboard clear action
 	Clear WSMessageType = "clear"
+	// FilesList indicates a files list update
+	FilesList WSMessageType = "files_list"
 )
 
 // WSMessage represents a WebSocket message
 type WSMessage struct {
 	Type    WSMessageType `json:"type"`
 	Content string        `json:"content,omitempty"`
+	Files   interface{}   `json:"files,omitempty"`
 }
 
 // Service manages clipboard state and WebSocket connections
@@ -81,6 +84,24 @@ func (s *Service) Broadcast(msg WSMessage, exclude *websocket.Conn) {
 		if client == exclude {
 			continue
 		}
+		if err := client.WriteJSON(msg); err != nil {
+			// Log error but continue broadcasting to other clients
+			continue
+		}
+	}
+}
+
+// BroadcastFilesList sends a files list update to all connected clients
+func (s *Service) BroadcastFilesList(files interface{}) {
+	s.clientsMu.RLock()
+	defer s.clientsMu.RUnlock()
+
+	msg := WSMessage{
+		Type:  FilesList,
+		Files: files,
+	}
+
+	for client := range s.clients {
 		if err := client.WriteJSON(msg); err != nil {
 			// Log error but continue broadcasting to other clients
 			continue

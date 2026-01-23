@@ -1,6 +1,8 @@
 package files
 
 import (
+	"time"
+
 	"github.com/rs/zerolog/log"
 	"github.com/tus/tusd/v2/pkg/filelocker"
 	"github.com/tus/tusd/v2/pkg/filestore"
@@ -28,7 +30,7 @@ type TusdInfo struct {
 }
 
 // NewTusdHandler creates and configures a new tusd handler
-func NewTusdHandler(filesDir string) (*handler.Handler, error) {
+func NewTusdHandler(filesDir string, broadcastFunc func()) (*handler.Handler, error) {
 	store := filestore.New(filesDir)
 	locker := filelocker.New(filesDir)
 
@@ -40,11 +42,23 @@ func NewTusdHandler(filesDir string) (*handler.Handler, error) {
 	cors.AllowCredentials = true
 
 	tusHandler, err := handler.NewHandler(handler.Config{
-		BasePath:                "/api/uploads/",
-		StoreComposer:           composer,
-		RespectForwardedHeaders: true,
+		BasePath:                   "/api/uploads/",
+		StoreComposer:              composer,
+		RespectForwardedHeaders:    true,
 		Cors:                       &cors,
 		EnableExperimentalProtocol: true,
+		PreFinishResponseCallback: func(hook handler.HookEvent) (handler.HTTPResponse, error) {
+			// Upload completed successfully, broadcast updated file list
+			log.Info().Str("upload", hook.Upload.ID).Msg("Upload completed")
+			if broadcastFunc != nil {
+				// Small delay to ensure .info file is fully written to disk
+				go func() {
+					time.Sleep(100 * time.Millisecond)
+					broadcastFunc()
+				}()
+			}
+			return handler.HTTPResponse{}, nil
+		},
 	})
 	if err != nil {
 		return nil, err
