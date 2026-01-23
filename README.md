@@ -11,6 +11,13 @@ Shared clipboard service with WebSocket sync for real-time clipboard sharing acr
 - 🚀 Easy deployment with Helm
 - 💩 Vibe coded AI slop
 
+## Screenshots
+
+<div align="center">
+  <img src="assets/screenshot-mobile-clipboard.png" alt="Clipboard View" width="300"/>
+  <img src="assets/screenshot-mobile-files.png" alt="Files View" width="300"/>
+</div>
+
 ## Deployment
 
 #### Add the Helm Repository
