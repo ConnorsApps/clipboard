@@ -37,7 +37,7 @@ function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-dark-900 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-dark-900 flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-md bg-dark-800 rounded-2xl p-6 shadow-xl">
         <h1 className="text-2xl font-bold text-center text-accent-500 mb-6">
           Clipboard Sync
@@ -65,6 +65,17 @@ function Login() {
             {loading ? 'Logging in...' : 'Login'}
           </button>
         </form>
+      </div>
+      <div className="mt-6 text-xs text-gray-500 text-center">
+        <a 
+          href="https://www.flaticon.com/free-icons/clipboard" 
+          title="clipboard icons"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hover:text-gray-400 transition-colors"
+        >
+          Clipboard icons created by itim2101 - Flaticon
+        </a>
       </div>
     </div>
   )
