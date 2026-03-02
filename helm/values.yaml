@@ -22,6 +22,8 @@ hull:
     deployment:
       main:
         replicas: 1
+        strategy:
+          type: Recreate
         pod:
           containers:
             main:

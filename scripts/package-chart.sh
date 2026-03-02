@@ -2,8 +2,8 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CHART_DIR="${SCRIPT_DIR}/helm"
-PACKAGES_DIR="${SCRIPT_DIR}/helm"
+CHART_DIR="${SCRIPT_DIR}/../helm"
+PACKAGES_DIR="${SCRIPT_DIR}/../helm"
 
 cd "${SCRIPT_DIR}"
 

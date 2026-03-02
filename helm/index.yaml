@@ -3,22 +3,22 @@ entries:
   clipboard:
   - apiVersion: v2
     appVersion: 1.0.0
-    created: "2026-01-22T20:24:11.753681787-05:00"
+    created: "2026-03-01T20:03:40.378933839-05:00"
     dependencies:
     - name: hull
       repository: https://vidispine.github.io/hull
       version: 1.33.0
     description: Shared clipboard service with WebSocket sync
-    digest: 8d8a577da994ac3d490a04857a005687362b791eb6a074affb9081aa822f2501
+    digest: 7a271cb1e8cae28ff3204f6aed5bf1b6eac0832e2a2bc0ffd3dcec53102dd39f
     name: clipboard
     type: application
     urls:
-    - https://raw.githubusercontent.com/ConnorsApps/clipboard/main/helm/clipboard-1.0.0.tgz
-    version: 1.0.0
+    - https://raw.githubusercontent.com/ConnorsApps/clipboard/main/helm/clipboard-1.0.1.tgz
+    version: 1.0.1
   hull:
   - apiVersion: v2
     appVersion: "1.33"
-    created: "2026-01-22T20:24:11.76235748-05:00"
+    created: "2026-03-01T20:03:40.389697798-05:00"
     description: HULL - Helm Uniform Layer Library
     digest: 7e83d241684a93defd31f0311572a8c70d46dc3ae8395f199ac9ed5d8cee530f
     home: https://github.com/vidispine/hull
@@ -36,4 +36,4 @@ entries:
     urls:
     - https://raw.githubusercontent.com/ConnorsApps/clipboard/main/helm/charts/hull-1.33.0.tgz
     version: 1.33.0
-generated: "2026-01-22T20:24:11.744760933-05:00"
+generated: "2026-03-01T20:03:40.367108284-05:00"
