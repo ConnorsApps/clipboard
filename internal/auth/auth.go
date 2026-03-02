@@ -2,14 +2,15 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
 	"github.com/ConnorsApps/clipboard/internal/tokenstore"
-	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 )
 
@@ -25,6 +26,15 @@ func New(passwords []string, tokenStore tokenstore.Store) *Service {
 		passwords:  passwords,
 		tokenStore: tokenStore,
 	}
+}
+
+// generateToken returns a cryptographically random token (32 bytes as hex).
+func generateToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
 
 // userIDFromPassword derives a stable user ID from a password (SHA-256 hex, first 16 chars).
@@ -64,14 +74,19 @@ func (s *Service) HandleLogin(w http.ResponseWriter, r *http.Request) {
 
 	userID := userIDFromPassword(req.Password)
 
-	// Generate token
-	token := uuid.New().String()
+	// Generate token (32 random bytes as hex = 64 chars, no need for UUID format)
+	token, err := generateToken()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to generate token")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
 
 	// Store token
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	err := s.tokenStore.Store(ctx, tokenstore.Token{
+	err = s.tokenStore.Store(ctx, tokenstore.Token{
 		Token:     token,
 		UserID:    userID,
 		CreatedAt: time.Now(),
@@ -88,21 +103,26 @@ func (s *Service) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"token": token})
 }
 
-// GetUserID returns the user ID for a valid token, or ("", false) if invalid
-func (s *Service) GetUserID(token string) (string, bool) {
+// GetUserID returns the user ID for a valid token. If the token is invalid or not found,
+// returns ("", false, nil) so the caller may respond with 401. If the token store has a
+// transient error, returns ("", false, err) so the caller may respond with 503 and allow retry.
+func (s *Service) GetUserID(token string) (string, bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	userID, ok, err := s.tokenStore.GetUserID(ctx, token)
 	if err != nil {
+		if errors.Is(err, tokenstore.ErrNotFound) {
+			return "", false, nil
+		}
 		log.Error().Err(err).Msg("Failed to get user ID for token")
-		return "", false
+		return "", false, err
 	}
-	return userID, ok
+	return userID, ok, nil
 }
 
 // ValidateToken checks if a token is valid
 func (s *Service) ValidateToken(token string) bool {
-	_, ok := s.GetUserID(token)
+	_, ok, _ := s.GetUserID(token)
 	return ok
 }

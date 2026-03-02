@@ -2,8 +2,13 @@ package tokenstore
 
 import (
 	"context"
+	"errors"
 	"time"
 )
+
+// ErrNotFound is returned when a token is not in the store (invalid or expired).
+// Callers can use errors.Is(err, ErrNotFound) to distinguish from transient store errors.
+var ErrNotFound = errors.New("token not found")
 
 // Token represents a stored auth token
 type Token struct {
@@ -20,7 +25,8 @@ type Store interface {
 	// Exists checks if a token exists
 	Exists(ctx context.Context, token string) (bool, error)
 
-	// GetUserID returns the user ID for a token, or false if not found
+	// GetUserID returns the user ID for a token. If the token is not found, returns ErrNotFound
+	// so callers can distinguish "invalid/expired token" (401) from transient store errors (503).
 	GetUserID(ctx context.Context, token string) (string, bool, error)
 
 	// Delete removes a token

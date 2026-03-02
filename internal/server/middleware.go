@@ -38,8 +38,9 @@ func withCORS(handler http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// withAuth wraps a handler with token validation and injects userID into the request context
-func withAuth(handler http.HandlerFunc, getUserID func(string) (string, bool)) http.HandlerFunc {
+// withAuth wraps a handler with token validation and injects userID into the request context.
+// Store errors (e.g. MongoDB timeout) return 503 so the client can retry without clearing the token.
+func withAuth(handler http.HandlerFunc, getUserID func(string) (string, bool, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Skip auth for HEAD requests
 		if r.Method == http.MethodHead || r.Method == http.MethodOptions {
@@ -56,7 +57,11 @@ func withAuth(handler http.HandlerFunc, getUserID func(string) (string, bool)) h
 			token = r.URL.Query().Get("token")
 		}
 
-		userID, ok := getUserID(token)
+		userID, ok, err := getUserID(token)
+		if err != nil {
+			http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
+			return
+		}
 		if !ok {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return

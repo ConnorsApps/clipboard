@@ -34,13 +34,13 @@ func (m *MemoryStore) Exists(ctx context.Context, token string) (bool, error) {
 	return exists, nil
 }
 
-// GetUserID returns the user ID for a token, or false if not found
+// GetUserID returns the user ID for a token, or ErrNotFound if not found
 func (m *MemoryStore) GetUserID(ctx context.Context, token string) (string, bool, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	t, exists := m.tokens[token]
 	if !exists {
-		return "", false, nil
+		return "", false, ErrNotFound
 	}
 	return t.UserID, true, nil
 }

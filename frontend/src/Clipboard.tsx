@@ -16,11 +16,13 @@ function Clipboard() {
   const isUnmountingRef = useRef(false)
   const navigate = useNavigate()
 
+  const wsMaxConnectAttempts = 3
+  const wsRetryDelayMs = 1500
+
   useEffect(() => {
     isUnmountingRef.current = false
 
-    const connect = () => {
-      // Don't connect if component is unmounting
+    const connect = (attempt = 0) => {
       if (isUnmountingRef.current) return
 
       const token = localStorage.getItem('clipboard_token')
@@ -41,9 +43,9 @@ function Clipboard() {
       }
 
       ws.onerror = () => {
-        // If we never successfully connected, treat as auth failure
-        // (WebSocket upgrade returned 401)
-        if (!hasConnectedRef.current) {
+        if (!hasConnectedRef.current && attempt < wsMaxConnectAttempts - 1) {
+          reconnectTimeoutRef.current = window.setTimeout(() => connect(attempt + 1), wsRetryDelayMs)
+        } else if (!hasConnectedRef.current) {
           localStorage.removeItem('clipboard_token')
           navigate('/login')
         }
@@ -52,21 +54,20 @@ function Clipboard() {
       ws.onclose = (event) => {
         setConnected(false)
 
-        // Don't reconnect if component is unmounting
         if (isUnmountingRef.current) return
 
-        // Auth failure codes
         if (event.code === 1008 || event.code === 4001) {
-          localStorage.removeItem('clipboard_token')
-          navigate('/login')
+          if (attempt < wsMaxConnectAttempts - 1) {
+            reconnectTimeoutRef.current = window.setTimeout(() => connect(attempt + 1), wsRetryDelayMs)
+          } else {
+            localStorage.removeItem('clipboard_token')
+            navigate('/login')
+          }
           return
         }
 
-        // Only reconnect if token still exists (not logged out)
         if (localStorage.getItem('clipboard_token')) {
-          reconnectTimeoutRef.current = window.setTimeout(() => {
-            connect()
-          }, 2000)
+          reconnectTimeoutRef.current = window.setTimeout(() => connect(0), 2000)
         }
       }
 

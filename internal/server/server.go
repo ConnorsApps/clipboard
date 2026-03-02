@@ -19,7 +19,7 @@ type Server struct {
 	filesHandler     http.HandlerFunc
 	filesListHandler http.HandlerFunc
 	loginHandler     http.HandlerFunc
-	getUserID        func(string) (string, bool)
+	getUserID        func(string) (string, bool, error)
 	uploadHandler    http.Handler
 }
 
@@ -30,7 +30,7 @@ func New(
 	filesHandler http.HandlerFunc,
 	filesListHandler http.HandlerFunc,
 	loginHandler http.HandlerFunc,
-	getUserID func(string) (string, bool),
+	getUserID func(string) (string, bool, error),
 	uploadHandler http.Handler,
 ) *Server {
 	return &Server{
@@ -39,7 +39,7 @@ func New(
 		filesHandler:     filesHandler,
 		filesListHandler: filesListHandler,
 		loginHandler:     loginHandler,
-		getUserID:       getUserID,
+		getUserID:        getUserID,
 		uploadHandler:    uploadHandler,
 	}
 }

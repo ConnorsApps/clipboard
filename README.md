@@ -61,6 +61,12 @@ The chart uses [HULL](https://github.com/vidispine/hull) for simplified Kubernet
 
 Key configuration options:
 
-- `CLIPBOARD_PASSWORDS`: Password(s) for authentication (required), The default is `1234`. Seperate multiple user's passwords with commas
-- `MONGODB_URI`: MongoDB connection string (optional, uses in-memory token store if not set - auth tokens will be lost on restart)
+- `CLIPBOARD_PASSWORDS`: Password(s) for authentication (required), The default is `1234`. Seperate multiple user's passwords with commas. Each user is distinguished by their password.
+- `MONGODB_URI`: MongoDB connection string (optional). If not set, the app uses an in-memory token store.
 - `FILES_DIR`: Directory for file storage (default: `/data`, mounted from PVC)
+
+#### Authentication and token storage
+
+- **In-memory store** (when `MONGODB_URI` is not set): Auth tokens are kept only in process memory. **All users must log in again after each server restart** (e.g. deploy or pod restart). Use this for single-instance or dev only.
+- **MongoDB store**: Set `MONGODB_URI` for persistent tokens so users stay logged in across restarts. Tokens do not expire by default. The optional script `scripts/add-mongo-index.sh` can add a TTL index so MongoDB auto-expires tokens after 30 days; only run it if you want token expiry.
+- Transient token-store errors (e.g. MongoDB timeouts) are returned as 503; the frontend retries and does not clear the token, so users are not logged out by brief backend issues.

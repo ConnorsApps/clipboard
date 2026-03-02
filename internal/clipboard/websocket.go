@@ -13,11 +13,16 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-// HandleWebSocket creates a WebSocket handler function that routes to the clipboard service for the authenticated user
-func (m *Manager) HandleWebSocket(getUserID func(string) (string, bool)) http.HandlerFunc {
+// HandleWebSocket creates a WebSocket handler function that routes to the clipboard service for the authenticated user.
+// Store errors return 503 so the client can retry without clearing the token.
+func (m *Manager) HandleWebSocket(getUserID func(string) (string, bool, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := r.URL.Query().Get("token")
-		userID, ok := getUserID(token)
+		userID, ok, err := getUserID(token)
+		if err != nil {
+			http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
+			return
+		}
 		if !ok {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return

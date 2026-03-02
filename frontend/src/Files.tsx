@@ -64,11 +64,14 @@ function Files() {
   })
   const navigate = useNavigate()
 
+  const wsMaxConnectAttempts = 3
+  const wsRetryDelayMs = 1500
+
   useEffect(() => {
     isUnmountingRef.current = false
 
-    // WebSocket connection
-    const connect = () => {
+    // WebSocket connection with retries before treating as auth failure
+    const connect = (attempt = 0) => {
       // Don't connect if component is unmounting
       if (isUnmountingRef.current) return
 
@@ -90,8 +93,9 @@ function Files() {
       }
 
       ws.onerror = () => {
-        // If we never successfully connected, treat as auth failure
-        if (!hasConnectedRef.current) {
+        if (!hasConnectedRef.current && attempt < wsMaxConnectAttempts - 1) {
+          reconnectTimeoutRef.current = window.setTimeout(() => connect(attempt + 1), wsRetryDelayMs)
+        } else if (!hasConnectedRef.current) {
           localStorage.removeItem('clipboard_token')
           navigate('/login')
         }
@@ -100,21 +104,20 @@ function Files() {
       ws.onclose = (event) => {
         setConnected(false)
 
-        // Don't reconnect if component is unmounting
         if (isUnmountingRef.current) return
 
-        // Auth failure codes
         if (event.code === 1008 || event.code === 4001) {
-          localStorage.removeItem('clipboard_token')
-          navigate('/login')
+          if (attempt < wsMaxConnectAttempts - 1) {
+            reconnectTimeoutRef.current = window.setTimeout(() => connect(attempt + 1), wsRetryDelayMs)
+          } else {
+            localStorage.removeItem('clipboard_token')
+            navigate('/login')
+          }
           return
         }
 
-        // Only reconnect if token still exists
         if (localStorage.getItem('clipboard_token')) {
-          reconnectTimeoutRef.current = window.setTimeout(() => {
-            connect()
-          }, 2000)
+          reconnectTimeoutRef.current = window.setTimeout(() => connect(0), 2000)
         }
       }
 
@@ -156,44 +159,84 @@ function Files() {
   }, [uppy, navigate])
 
   const fetchFiles = async () => {
-    try {
-      const token = localStorage.getItem('clipboard_token')
-      const response = await fetch('/api/files', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
+    const token = localStorage.getItem('clipboard_token')
+    const maxAttempts = 3
+    const retryDelayMs = 1000
 
-      if (response.status === 401) {
-        localStorage.removeItem('clipboard_token')
-        navigate('/login')
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const response = await fetch('/api/files', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        })
+
+        if (response.status === 401) {
+          if (attempt < maxAttempts - 1) {
+            await new Promise((r) => setTimeout(r, retryDelayMs))
+            continue
+          }
+          localStorage.removeItem('clipboard_token')
+          navigate('/login')
+          return
+        }
+
+        if (response.status === 503) {
+          if (attempt < maxAttempts - 1) {
+            await new Promise((r) => setTimeout(r, retryDelayMs))
+            continue
+          }
+          return
+        }
+
+        if (response.ok) {
+          const data = await response.json()
+          setFiles(data || [])
+        }
         return
+      } catch (error) {
+        if (attempt < maxAttempts - 1) {
+          await new Promise((r) => setTimeout(r, retryDelayMs))
+          continue
+        }
+        console.error('Failed to fetch files:', error)
       }
-
-      if (response.ok) {
-        const data = await response.json()
-        setFiles(data || [])
-      }
-    } catch (error) {
-      console.error('Failed to fetch files:', error)
     }
   }
 
   const handleDelete = async (fileId: string) => {
-    try {
-      const token = localStorage.getItem('clipboard_token')
-      const response = await fetch(`/api/files/${fileId}`, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
-
-      if (response.ok) {
-        await fetchFiles()
+    const token = localStorage.getItem('clipboard_token')
+    const maxAttempts = 2
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const response = await fetch(`/api/files/${fileId}`, {
+          method: 'DELETE',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        })
+        if (response.status === 401 || response.status === 503) {
+          if (attempt < maxAttempts - 1) {
+            await new Promise((r) => setTimeout(r, 1000))
+            continue
+          }
+          if (response.status === 401) {
+            localStorage.removeItem('clipboard_token')
+            navigate('/login')
+          }
+          return
+        }
+        if (response.ok) {
+          await fetchFiles()
+        }
+        return
+      } catch (error) {
+        if (attempt < maxAttempts - 1) {
+          await new Promise((r) => setTimeout(r, 1000))
+          continue
+        }
+        console.error('Failed to delete file:', error)
       }
-    } catch (error) {
-      console.error('Failed to delete file:', error)
     }
   }
 

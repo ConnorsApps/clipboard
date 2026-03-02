@@ -58,7 +58,7 @@ func (m *MongoStore) GetUserID(ctx context.Context, token string) (string, bool,
 	err := m.collection.FindOne(ctx, bson.M{"token": token}).Decode(&result)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
-			return "", false, nil
+			return "", false, ErrNotFound
 		}
 		return "", false, err
 	}
