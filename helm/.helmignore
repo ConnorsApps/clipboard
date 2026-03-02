@@ -26,3 +26,8 @@
 .helmignore
 install.sh
 clipboard-*.tgz
+charts/hull/values.schema.json
+charts/hull/README.md
+charts/hull/HISTORY.md
+charts/hull/doc/
+charts/hull/files/
