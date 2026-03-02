@@ -13,12 +13,12 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-// HandleWebSocket creates a WebSocket handler function
-func (s *Service) HandleWebSocket(validateToken func(string) bool) http.HandlerFunc {
+// HandleWebSocket creates a WebSocket handler function that routes to the clipboard service for the authenticated user
+func (m *Manager) HandleWebSocket(getUserID func(string) (string, bool)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Validate token from query param
 		token := r.URL.Query().Get("token")
-		if !validateToken(token) {
+		userID, ok := getUserID(token)
+		if !ok {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -30,9 +30,9 @@ func (s *Service) HandleWebSocket(validateToken func(string) bool) http.HandlerF
 		}
 		defer conn.Close()
 
-		// Register client
+		s := m.GetOrCreate(userID)
 		s.RegisterClient(conn)
-		log.Info().Msg("WebSocket client connected")
+		log.Info().Str("userID", userID).Msg("WebSocket client connected")
 
 		// Send current clipboard content
 		content := s.GetContent()
@@ -53,14 +53,14 @@ func (s *Service) HandleWebSocket(validateToken func(string) bool) http.HandlerF
 			switch msg.Type {
 			case Update:
 				s.SetContent(msg.Content)
-				log.Debug().Int("length", len(msg.Content)).Msg("Clipboard updated")
+				log.Debug().Str("userID", userID).Int("length", len(msg.Content)).Msg("Clipboard updated")
 
 				// Broadcast to all clients except sender
 				s.Broadcast(WSMessage{Type: "content", Content: msg.Content}, conn)
 
 			case Clear:
 				s.ClearContent()
-				log.Info().Msg("Clipboard cleared")
+				log.Info().Str("userID", userID).Msg("Clipboard cleared")
 
 				// Broadcast to all clients including sender
 				s.Broadcast(WSMessage{Type: "content", Content: ""}, nil)
@@ -69,6 +69,6 @@ func (s *Service) HandleWebSocket(validateToken func(string) bool) http.HandlerF
 
 		// Unregister client
 		s.UnregisterClient(conn)
-		log.Info().Msg("WebSocket client disconnected")
+		log.Info().Str("userID", userID).Msg("WebSocket client disconnected")
 	}
 }

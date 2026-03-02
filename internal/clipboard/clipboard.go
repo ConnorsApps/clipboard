@@ -25,7 +25,7 @@ type WSMessage struct {
 	Files   interface{}   `json:"files,omitempty"`
 }
 
-// Service manages clipboard state and WebSocket connections
+// Service manages clipboard state and WebSocket connections for a single user
 type Service struct {
 	content   string
 	mu        sync.RWMutex
@@ -38,6 +38,37 @@ func New() *Service {
 	return &Service{
 		clients: make(map[*websocket.Conn]bool),
 	}
+}
+
+// Manager holds per-user clipboard services
+type Manager struct {
+	services map[string]*Service
+	mu       sync.RWMutex
+}
+
+// NewManager creates a new clipboard manager
+func NewManager() *Manager {
+	return &Manager{
+		services: make(map[string]*Service),
+	}
+}
+
+// GetOrCreate returns the clipboard service for the given user ID, creating it if needed
+func (m *Manager) GetOrCreate(userID string) *Service {
+	m.mu.RLock()
+	s, ok := m.services[userID]
+	m.mu.RUnlock()
+	if ok {
+		return s
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if s, ok = m.services[userID]; ok {
+		return s
+	}
+	s = New()
+	m.services[userID] = s
+	return s
 }
 
 // GetContent returns the current clipboard content

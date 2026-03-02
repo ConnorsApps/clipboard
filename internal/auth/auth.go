@@ -2,6 +2,8 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -13,16 +15,22 @@ import (
 
 // Service manages authentication operations
 type Service struct {
-	password   string
+	passwords  []string
 	tokenStore tokenstore.Store
 }
 
-// New creates a new auth service
-func New(password string, tokenStore tokenstore.Store) *Service {
+// New creates a new auth service. passwords is the list of valid passwords (each maps to a distinct user).
+func New(passwords []string, tokenStore tokenstore.Store) *Service {
 	return &Service{
-		password:   password,
+		passwords:  passwords,
 		tokenStore: tokenStore,
 	}
+}
+
+// userIDFromPassword derives a stable user ID from a password (SHA-256 hex, first 16 chars).
+func userIDFromPassword(password string) string {
+	h := sha256.Sum256([]byte(password))
+	return hex.EncodeToString(h[:])[:16]
 }
 
 // HandleLogin processes login requests
@@ -41,11 +49,20 @@ func (s *Service) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Password != s.password {
+	var matched bool
+	for _, p := range s.passwords {
+		if req.Password == p {
+			matched = true
+			break
+		}
+	}
+	if !matched {
 		log.Warn().Msg("Invalid login attempt")
 		http.Error(w, "Invalid password", http.StatusUnauthorized)
 		return
 	}
+
+	userID := userIDFromPassword(req.Password)
 
 	// Generate token
 	token := uuid.New().String()
@@ -56,6 +73,7 @@ func (s *Service) HandleLogin(w http.ResponseWriter, r *http.Request) {
 
 	err := s.tokenStore.Store(ctx, tokenstore.Token{
 		Token:     token,
+		UserID:    userID,
 		CreatedAt: time.Now(),
 	})
 	if err != nil {
@@ -64,22 +82,27 @@ func (s *Service) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Info().Msg("Successful login")
+	log.Info().Str("userID", userID).Msg("Successful login")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"token": token})
 }
 
-// ValidateToken checks if a token is valid
-func (s *Service) ValidateToken(token string) bool {
+// GetUserID returns the user ID for a valid token, or ("", false) if invalid
+func (s *Service) GetUserID(token string) (string, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	exists, err := s.tokenStore.Exists(ctx, token)
+	userID, ok, err := s.tokenStore.GetUserID(ctx, token)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to validate token")
-		return false
+		log.Error().Err(err).Msg("Failed to get user ID for token")
+		return "", false
 	}
+	return userID, ok
+}
 
-	return exists
+// ValidateToken checks if a token is valid
+func (s *Service) ValidateToken(token string) bool {
+	_, ok := s.GetUserID(token)
+	return ok
 }

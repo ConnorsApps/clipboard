@@ -62,7 +62,7 @@ hull:
     secret:
       clipboard:
         data:
-          CLIPBOARD_PASSWORD:
+          CLIPBOARD_PASSWORDS:
             inline: "your-password-here"
           MONGODB_URI:
             inline: "mongodb://your-mongodb-uri"  # Optional

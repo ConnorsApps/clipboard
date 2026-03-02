@@ -8,6 +8,7 @@ import (
 // Token represents a stored auth token
 type Token struct {
 	Token     string    `bson:"token"`
+	UserID    string    `bson:"user_id"`
 	CreatedAt time.Time `bson:"created_at"`
 }
 
@@ -18,6 +19,9 @@ type Store interface {
 
 	// Exists checks if a token exists
 	Exists(ctx context.Context, token string) (bool, error)
+
+	// GetUserID returns the user ID for a token, or false if not found
+	GetUserID(ctx context.Context, token string) (string, bool, error)
 
 	// Delete removes a token
 	Delete(ctx context.Context, token string) error

@@ -50,6 +50,21 @@ func (m *MongoStore) Exists(ctx context.Context, token string) (bool, error) {
 	return count > 0, nil
 }
 
+// GetUserID returns the user ID for a token, or false if not found
+func (m *MongoStore) GetUserID(ctx context.Context, token string) (string, bool, error) {
+	var result struct {
+		UserID string `bson:"user_id"`
+	}
+	err := m.collection.FindOne(ctx, bson.M{"token": token}).Decode(&result)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	return result.UserID, true, nil
+}
+
 // Delete removes a token
 func (m *MongoStore) Delete(ctx context.Context, token string) error {
 	_, err := m.collection.DeleteOne(ctx, bson.M{"token": token})

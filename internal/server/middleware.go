@@ -1,10 +1,25 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"strings"
 )
+
+type contextKey string
+
+const userIDContextKey contextKey = "userID"
+
+// UserIDFromContext returns the user ID from the request context, or ("", false) if not set
+func UserIDFromContext(ctx context.Context) (string, bool) {
+	v := ctx.Value(userIDContextKey)
+	if v == nil {
+		return "", false
+	}
+	s, ok := v.(string)
+	return s, ok && s != ""
+}
 
 // withCORS wraps a handler with CORS headers
 func withCORS(handler http.HandlerFunc) http.HandlerFunc {
@@ -23,8 +38,8 @@ func withCORS(handler http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// withAuth wraps a handler with token validation
-func withAuth(handler http.HandlerFunc, validateToken func(string) bool) http.HandlerFunc {
+// withAuth wraps a handler with token validation and injects userID into the request context
+func withAuth(handler http.HandlerFunc, getUserID func(string) (string, bool)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Skip auth for HEAD requests
 		if r.Method == http.MethodHead || r.Method == http.MethodOptions {
@@ -41,11 +56,13 @@ func withAuth(handler http.HandlerFunc, validateToken func(string) bool) http.Ha
 			token = r.URL.Query().Get("token")
 		}
 
-		if !validateToken(token) {
+		userID, ok := getUserID(token)
+		if !ok {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
 
+		*r = *r.WithContext(context.WithValue(r.Context(), userIDContextKey, userID))
 		handler(w, r)
 	}
 }

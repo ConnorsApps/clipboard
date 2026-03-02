@@ -45,8 +45,8 @@ hull:
     secret:
       clipboard:
         data:
-          CLIPBOARD_PASSWORD:
-            inline: "your-secure-password"
+          CLIPBOARD_PASSWORDS:
+            inline: "your-secure-password,my-other-users-password"
           MONGODB_URI:
             inline: "mongodb://your-mongo-uri"  # Optional, leave empty for in-memory
 EOF
@@ -61,6 +61,6 @@ The chart uses [HULL](https://github.com/vidispine/hull) for simplified Kubernet
 
 Key configuration options:
 
-- `CLIPBOARD_PASSWORD`: Password for authentication (required), The default is `1234`
+- `CLIPBOARD_PASSWORDS`: Password(s) for authentication (required), The default is `1234`. Seperate multiple user's passwords with commas
 - `MONGODB_URI`: MongoDB connection string (optional, uses in-memory token store if not set - auth tokens will be lost on restart)
 - `FILES_DIR`: Directory for file storage (default: `/data`, mounted from PVC)

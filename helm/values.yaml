@@ -54,7 +54,7 @@ hull:
     secret:
       clipboard:
         data:
-          CLIPBOARD_PASSWORD:
+          CLIPBOARD_PASSWORDS:
             inline: ""  # Set via Terraform
           MONGODB_URI:
             inline: ""  # Set via Terraform

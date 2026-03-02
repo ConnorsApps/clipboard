@@ -19,7 +19,7 @@ type Server struct {
 	filesHandler     http.HandlerFunc
 	filesListHandler http.HandlerFunc
 	loginHandler     http.HandlerFunc
-	validateToken    func(string) bool
+	getUserID        func(string) (string, bool)
 	uploadHandler    http.Handler
 }
 
@@ -30,7 +30,7 @@ func New(
 	filesHandler http.HandlerFunc,
 	filesListHandler http.HandlerFunc,
 	loginHandler http.HandlerFunc,
-	validateToken func(string) bool,
+	getUserID func(string) (string, bool),
 	uploadHandler http.Handler,
 ) *Server {
 	return &Server{
@@ -39,7 +39,7 @@ func New(
 		filesHandler:     filesHandler,
 		filesListHandler: filesListHandler,
 		loginHandler:     loginHandler,
-		validateToken:    validateToken,
+		getUserID:       getUserID,
 		uploadHandler:    uploadHandler,
 	}
 }
@@ -84,14 +84,14 @@ func (s *Server) Run() error {
 	mux.HandleFunc("/api/login", withCORS(s.loginHandler))
 	mux.HandleFunc("/ws", s.clipboardHandler)
 
-	mux.HandleFunc("/api/uploads/", withAuth(http.StripPrefix("/api/uploads/", s.uploadHandler).ServeHTTP, s.validateToken))
-	mux.HandleFunc("/api/uploads", withAuth(http.StripPrefix("/api/uploads", s.uploadHandler).ServeHTTP, s.validateToken))
+	mux.HandleFunc("/api/uploads/", withAuth(s.uploadHandler.ServeHTTP, s.getUserID))
+	mux.HandleFunc("/api/uploads", withAuth(s.uploadHandler.ServeHTTP, s.getUserID))
 
 	// File listing endpoint
-	mux.HandleFunc("GET /api/files", withCORS(withAuth(s.filesListHandler, s.validateToken)))
+	mux.HandleFunc("GET /api/files", withCORS(withAuth(s.filesListHandler, s.getUserID)))
 
 	// File download and delete endpoint
-	mux.HandleFunc("/api/files/", withCORS(withAuth(s.filesHandler, s.validateToken)))
+	mux.HandleFunc("/api/files/", withCORS(withAuth(s.filesHandler, s.getUserID)))
 
 	log.Info().Str("port", s.cfg.Port).Msg("Server started")
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {

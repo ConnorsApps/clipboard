@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -57,6 +58,11 @@ func main() {
 		}
 	}()
 
+	passwords := cfg.Passwords
+	if len(passwords) == 0 {
+		passwords = []string{"1234"}
+	}
+
 	// Create files directory if it doesn't exist
 	if err := os.MkdirAll(cfg.FilesDir, 0755); err != nil {
 		log.Fatal().Err(err).Str("dir", cfg.FilesDir).Msg("Failed to create files directory")
@@ -64,29 +70,28 @@ func main() {
 	log.Info().Str("dir", cfg.FilesDir).Msg("Files directory initialized")
 
 	// Initialize services
-	authSvc := auth.New(cfg.Password, tokenStore)
-	clipboardSvc := clipboard.New()
-	
-	// Create files service with broadcast callback
-	filesSvc := files.New(cfg.FilesDir, func(filesList []files.FileInfo) {
-		clipboardSvc.BroadcastFilesList(filesList)
-	})
+	authSvc := auth.New(passwords, tokenStore)
+	clipboardMgr := clipboard.NewManager()
 
-	// Initialize tusd handler with broadcast callback
-	tusHandler, err := files.NewTusdHandler(cfg.FilesDir, filesSvc.BroadcastFilesList)
-	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to create tusd handler")
+	broadcastForUser := func(userID string) func([]files.FileInfo) {
+		return func(filesList []files.FileInfo) {
+			clipboardMgr.GetOrCreate(userID).BroadcastFilesList(filesList)
+		}
 	}
+	getUserIDFromRequest := func(r *http.Request) (string, bool) {
+		return server.UserIDFromContext(r.Context())
+	}
+	filesMgr := files.NewManager(cfg.FilesDir, broadcastForUser, getUserIDFromRequest)
 
 	// Create and run server
 	srv := server.New(
 		cfg,
-		clipboardSvc.HandleWebSocket(authSvc.ValidateToken),
-		filesSvc.HandleFile,
-		filesSvc.ListFiles,
+		clipboardMgr.HandleWebSocket(authSvc.GetUserID),
+		filesMgr.HandleFile,
+		filesMgr.ListFiles,
 		authSvc.HandleLogin,
-		authSvc.ValidateToken,
-		tusHandler,
+		authSvc.GetUserID,
+		http.HandlerFunc(filesMgr.HandleUpload),
 	)
 
 	if err := srv.Run(); err != nil {
