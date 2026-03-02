@@ -25,3 +25,4 @@
 *.md
 .helmignore
 install.sh
+clipboard-*.tgz
