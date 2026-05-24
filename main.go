@@ -38,12 +38,28 @@ func main() {
 		storeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 
-		store, err := tokenstore.NewMongoStore(storeCtx, cfg.MongoURI)
+		tokenExpirySecs, err := config.ParseTokenExpiry(cfg.TokenExpiry)
+		if err != nil {
+			log.Fatal().Err(err).Msg("Invalid TOKEN_EXPIRY")
+		}
+		store, err := tokenstore.NewMongoStore(storeCtx, cfg.MongoURI, tokenExpirySecs)
 		if err != nil {
 			log.Fatal().Err(err).Msg("Failed to connect to MongoDB")
 		}
 		tokenStore = store
 		log.Info().Msg("Using MongoDB token store")
+
+		go func() {
+			ticker := time.NewTicker(30 * time.Second)
+			defer ticker.Stop()
+			for range ticker.C {
+				pingCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				if err := store.Ping(pingCtx); err != nil {
+					log.Warn().Err(err).Msg("MongoDB keepalive ping failed")
+				}
+				cancel()
+			}
+		}()
 	} else {
 		tokenStore = tokenstore.NewMemoryStore()
 		log.Info().Msg("Using in-memory token store")
@@ -87,6 +103,8 @@ func main() {
 	srv := server.New(
 		cfg,
 		clipboardMgr.HandleWebSocket(authSvc.GetUserID),
+		clipboardMgr.HandleGetClipboard(getUserIDFromRequest),
+		clipboardMgr.HandleSetClipboard(getUserIDFromRequest),
 		filesMgr.HandleFile,
 		filesMgr.ListFiles,
 		authSvc.HandleLogin,

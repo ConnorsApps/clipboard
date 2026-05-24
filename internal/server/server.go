@@ -14,19 +14,23 @@ import (
 
 // Server represents the HTTP server
 type Server struct {
-	cfg              *config.Config
-	clipboardHandler http.HandlerFunc
-	filesHandler     http.HandlerFunc
-	filesListHandler http.HandlerFunc
-	loginHandler     http.HandlerFunc
-	getUserID        func(string) (string, bool, error)
-	uploadHandler    http.Handler
+	cfg                 *config.Config
+	clipboardHandler    http.HandlerFunc
+	clipboardGetHandler http.HandlerFunc
+	clipboardSetHandler http.HandlerFunc
+	filesHandler        http.HandlerFunc
+	filesListHandler    http.HandlerFunc
+	loginHandler        http.HandlerFunc
+	getUserID           func(string) (string, bool, error)
+	uploadHandler       http.Handler
 }
 
 // New creates a new Server instance
 func New(
 	cfg *config.Config,
 	clipboardHandler http.HandlerFunc,
+	clipboardGetHandler http.HandlerFunc,
+	clipboardSetHandler http.HandlerFunc,
 	filesHandler http.HandlerFunc,
 	filesListHandler http.HandlerFunc,
 	loginHandler http.HandlerFunc,
@@ -34,13 +38,15 @@ func New(
 	uploadHandler http.Handler,
 ) *Server {
 	return &Server{
-		cfg:              cfg,
-		clipboardHandler: clipboardHandler,
-		filesHandler:     filesHandler,
-		filesListHandler: filesListHandler,
-		loginHandler:     loginHandler,
-		getUserID:        getUserID,
-		uploadHandler:    uploadHandler,
+		cfg:                 cfg,
+		clipboardHandler:    clipboardHandler,
+		clipboardGetHandler: clipboardGetHandler,
+		clipboardSetHandler: clipboardSetHandler,
+		filesHandler:        filesHandler,
+		filesListHandler:    filesListHandler,
+		loginHandler:        loginHandler,
+		getUserID:           getUserID,
+		uploadHandler:       uploadHandler,
 	}
 }
 
@@ -83,6 +89,8 @@ func (s *Server) Run() error {
 	// API endpoints
 	mux.HandleFunc("/api/login", withCORS(s.loginHandler))
 	mux.HandleFunc("/ws", s.clipboardHandler)
+	mux.HandleFunc("GET /api/clipboard", withCORS(withAuth(s.clipboardGetHandler, s.getUserID)))
+	mux.HandleFunc("POST /api/clipboard", withCORS(withAuth(s.clipboardSetHandler, s.getUserID)))
 
 	mux.HandleFunc("/api/uploads/", withAuth(s.uploadHandler.ServeHTTP, s.getUserID))
 	mux.HandleFunc("/api/uploads", withAuth(s.uploadHandler.ServeHTTP, s.getUserID))

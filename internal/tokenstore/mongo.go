@@ -14,8 +14,9 @@ type MongoStore struct {
 	collection *mongo.Collection
 }
 
-// NewMongoStore creates a new MongoDB token store
-func NewMongoStore(ctx context.Context, uri string) (*MongoStore, error) {
+// NewMongoStore creates a new MongoDB token store. tokenExpirySecs is the TTL
+// for tokens in seconds; nil means tokens never expire.
+func NewMongoStore(ctx context.Context, uri string, tokenExpirySecs *int32) (*MongoStore, error) {
 	client, err := mongo.Connect(options.Client().ApplyURI(uri).SetRetryReads(true).SetRetryWrites(true))
 	if err != nil {
 		return nil, err
@@ -29,10 +30,19 @@ func NewMongoStore(ctx context.Context, uri string) (*MongoStore, error) {
 	db := client.Database("clipboard")
 	collection := db.Collection("tokens")
 
+	if err := ensureTokenIndex(ctx, collection, tokenExpirySecs); err != nil {
+		return nil, err
+	}
+
 	return &MongoStore{
 		client:     client,
 		collection: collection,
 	}, nil
+}
+
+// Ping checks that the MongoDB connection is alive.
+func (m *MongoStore) Ping(ctx context.Context) error {
+	return m.client.Ping(ctx, nil)
 }
 
 // Store saves a new token
@@ -74,4 +84,39 @@ func (m *MongoStore) Delete(ctx context.Context, token string) error {
 // Close disconnects from MongoDB
 func (m *MongoStore) Close(ctx context.Context) error {
 	return m.client.Disconnect(ctx)
+}
+
+func ensureTokenIndex(ctx context.Context, collection *mongo.Collection, tokenExpirySecs *int32) error {
+	specs, err := collection.Indexes().ListSpecifications(ctx)
+	if err != nil {
+		return err
+	}
+	existing := make(map[string]bool, len(specs))
+	for _, spec := range specs {
+		existing[spec.Name] = true
+	}
+
+	if !existing["token_1"] {
+		if _, err = collection.Indexes().CreateOne(ctx, mongo.IndexModel{
+			Keys:    bson.D{{Key: "token", Value: 1}},
+			Options: options.Index().SetUnique(true),
+		}); err != nil {
+			return err
+		}
+	}
+	if tokenExpirySecs != nil {
+		if !existing["created_at_1"] {
+			if _, err = collection.Indexes().CreateOne(ctx, mongo.IndexModel{
+				Keys:    bson.D{{Key: "created_at", Value: 1}},
+				Options: options.Index().SetExpireAfterSeconds(*tokenExpirySecs),
+			}); err != nil {
+				return err
+			}
+		}
+	} else if existing["created_at_1"] {
+		if err = collection.Indexes().DropOne(ctx, "created_at_1"); err != nil {
+			return err
+		}
+	}
+	return nil
 }

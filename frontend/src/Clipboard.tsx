@@ -17,7 +17,7 @@ function Clipboard() {
   const navigate = useNavigate()
 
   const wsMaxConnectAttempts = 3
-  const wsRetryDelayMs = 1500
+  const wsRetryDelayMs = 300
 
   useEffect(() => {
     isUnmountingRef.current = false
@@ -43,12 +43,7 @@ function Clipboard() {
       }
 
       ws.onerror = () => {
-        if (!hasConnectedRef.current && attempt < wsMaxConnectAttempts - 1) {
-          reconnectTimeoutRef.current = window.setTimeout(() => connect(attempt + 1), wsRetryDelayMs)
-        } else if (!hasConnectedRef.current) {
-          localStorage.removeItem('clipboard_token')
-          navigate('/login')
-        }
+        // onclose always fires after onerror and handles all reconnection
       }
 
       ws.onclose = (event) => {
@@ -56,7 +51,7 @@ function Clipboard() {
 
         if (isUnmountingRef.current) return
 
-        if (event.code === 1008 || event.code === 4001) {
+        if (event.code === 1008 || event.code === 4001 || !hasConnectedRef.current) {
           if (attempt < wsMaxConnectAttempts - 1) {
             reconnectTimeoutRef.current = window.setTimeout(() => connect(attempt + 1), wsRetryDelayMs)
           } else {

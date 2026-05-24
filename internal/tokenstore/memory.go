@@ -54,6 +54,4 @@ func (m *MemoryStore) Delete(ctx context.Context, token string) error {
 }
 
 // Close is a no-op for in-memory store
-func (m *MemoryStore) Close(ctx context.Context) error {
-	return nil
-}
+func (m *MemoryStore) Close(ctx context.Context) error { return nil }
