@@ -2,9 +2,15 @@ package clipboard
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog/log"
+)
+
+const (
+	pingInterval = 30 * time.Second
+	pongTimeout  = 10 * time.Second
 )
 
 var upgrader = websocket.Upgrader{
@@ -17,23 +23,29 @@ var upgrader = websocket.Upgrader{
 // Store errors return 503 so the client can retry without clearing the token.
 func (m *Manager) HandleWebSocket(getUserID func(string) (string, bool, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		token := r.URL.Query().Get("token")
-		userID, ok, err := getUserID(token)
-		if err != nil {
-			http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
-			return
-		}
-		if !ok {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			log.Error().Err(err).Msg("WebSocket upgrade failed")
 			return
 		}
 		defer conn.Close()
+
+		token := r.URL.Query().Get("token")
+		userID, ok, err := getUserID(token)
+		if err != nil {
+			conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseTryAgainLater, "service unavailable"))
+			return
+		}
+		if !ok {
+			conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(4001, "unauthorized"))
+			return
+		}
+
+		conn.SetReadDeadline(time.Now().Add(pingInterval + pongTimeout))
+		conn.SetPongHandler(func(string) error {
+			conn.SetReadDeadline(time.Now().Add(pingInterval + pongTimeout))
+			return nil
+		})
 
 		s := m.GetOrCreate(userID)
 		s.RegisterClient(conn)
@@ -44,6 +56,24 @@ func (m *Manager) HandleWebSocket(getUserID func(string) (string, bool, error)) 
 		if err := conn.WriteJSON(WSMessage{Type: "content", Content: content}); err != nil {
 			log.Error().Err(err).Msg("Failed to send initial content")
 		}
+
+		// Ping goroutine keeps the connection alive through proxies with short idle timeouts
+		done := make(chan struct{})
+		defer close(done)
+		go func() {
+			ticker := time.NewTicker(pingInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					if err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(pongTimeout)); err != nil {
+						return
+					}
+				case <-done:
+					return
+				}
+			}
+		}()
 
 		// Handle incoming messages
 		for {

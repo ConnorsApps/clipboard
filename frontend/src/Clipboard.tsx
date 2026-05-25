@@ -16,9 +16,6 @@ function Clipboard() {
   const isUnmountingRef = useRef(false)
   const navigate = useNavigate()
 
-  const wsMaxConnectAttempts = 3
-  const wsRetryDelayMs = 300
-
   useEffect(() => {
     isUnmountingRef.current = false
 
@@ -51,18 +48,18 @@ function Clipboard() {
 
         if (isUnmountingRef.current) return
 
-        if (event.code === 1008 || event.code === 4001 || !hasConnectedRef.current) {
-          if (attempt < wsMaxConnectAttempts - 1) {
-            reconnectTimeoutRef.current = window.setTimeout(() => connect(attempt + 1), wsRetryDelayMs)
-          } else {
-            localStorage.removeItem('clipboard_token')
-            navigate('/login')
-          }
+        // 4001/1008 = explicit auth rejection from the server — token is bad
+        if (event.code === 4001 || event.code === 1008) {
+          localStorage.removeItem('clipboard_token')
+          navigate('/login')
           return
         }
 
+        // Any other close (server restart, network blip, proxy drop) — keep retrying.
+        // Backoff: 1s, 2s, 4s, … capped at 30s.
         if (localStorage.getItem('clipboard_token')) {
-          reconnectTimeoutRef.current = window.setTimeout(() => connect(0), 2000)
+          const delay = Math.min(1000 * Math.pow(2, attempt), 30000)
+          reconnectTimeoutRef.current = window.setTimeout(() => connect(attempt + 1), delay)
         }
       }
 
