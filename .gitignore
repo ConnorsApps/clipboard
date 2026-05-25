@@ -12,3 +12,4 @@ tmp-files/
 clipboard
 !internal/clipboard
 !.github
+settings.local.json
