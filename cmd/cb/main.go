@@ -6,6 +6,8 @@ import (
 	"os"
 
 	"charm.land/lipgloss/v2"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/urfave/cli/v3"
 )
 
@@ -15,15 +17,16 @@ var (
 	dimStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 )
 
-func fatal(msg string) {
-	fmt.Fprintln(os.Stderr, errStyle.Render("Error: ")+msg)
-	os.Exit(1)
+func init() {
+	cw := zerolog.ConsoleWriter{Out: os.Stderr}
+	cw.FormatTimestamp = func(interface{}) string { return "" }
+	log.Logger = zerolog.New(cw)
 }
 
 func mustLoadConfig() *Config {
 	cfg, err := loadConfig()
 	if err != nil {
-		fatal("not logged in — run 'cb login' first")
+		log.Fatal().Msg("Not logged in — run 'cb login' first")
 	}
 	return cfg
 }
@@ -38,7 +41,8 @@ func main() {
 			loginCommand(),
 			getCommand(),
 			setCommand(),
-			watchCommand(),
+			clearCommand(),
+			liveCommand(),
 			logoutCommand(),
 			filesCommand(),
 			{
@@ -52,8 +56,7 @@ func main() {
 		},
 		ExitErrHandler: func(_ context.Context, _ *cli.Command, err error) {
 			if err != nil {
-				fmt.Fprintln(os.Stderr, errStyle.Render("Error: ")+err.Error())
-				os.Exit(1)
+				log.Fatal().Err(err).Send()
 			}
 		},
 	}

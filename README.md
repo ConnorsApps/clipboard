@@ -18,6 +18,50 @@ Shared clipboard service with WebSocket sync for real-time clipboard sharing acr
   <img src="assets/screenshot-mobile-files.png" alt="Files View" width="300"/>
 </div>
 
+## CLI
+
+A `cb` command-line client is included for interacting with a clipboard server from the terminal.
+
+#### Install
+
+```bash
+go install github.com/ConnorsApps/clipboard/cmd/cb@latest
+```
+
+This drops a `cb` binary in `$(go env GOPATH)/bin` — make sure that's on your `PATH`.
+
+#### Log in
+
+```bash
+cb login --server https://clipboard.example.com
+# (you'll be prompted for the password)
+```
+
+Credentials are saved to `~/.config/clipboard-cli/config.yaml` (honors `XDG_CONFIG_HOME`).
+
+#### Commands
+
+| Command | What it does |
+| --- | --- |
+| `cb get` | Print clipboard contents to stdout. Pipe-friendly. |
+| `cb set [text]` | Set clipboard from args or stdin. e.g. `echo hi \| cb set` |
+| `cb clear` | Empty the clipboard. |
+| `cb live` | Interactive TUI viewer + editor with live WebSocket sync. `e` to edit, `ctrl+s` to send, `q` to quit. |
+| `cb files list` | List uploaded files. |
+| `cb files upload <path>` | Upload a file (resumable via tusd). |
+| `cb files download [id]` | Download by id, or pick interactively. Streams to stdout when piped. |
+| `cb files delete <id>` | Delete a file. |
+| `cb logout` | Forget saved credentials. |
+
+#### Zsh completion
+
+```bash
+# Enable now and persist for future shells
+source <(cb completion zsh) && echo 'source <(cb completion zsh)' >> ~/.zshrc
+```
+
+Bash is supported too: `cb completion bash`.
+
 ## Deployment
 
 #### Add the Helm Repository

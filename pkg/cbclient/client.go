@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strconv"
 )
@@ -30,6 +31,22 @@ func NewClient(serverURL, token string) *Client {
 		token:     token,
 		http:      &http.Client{},
 	}
+}
+
+func (c *Client) WebSocketURL() (string, error) {
+	u, err := url.Parse(c.serverURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid server URL: %w", err)
+	}
+	switch u.Scheme {
+	case "http":
+		u.Scheme = "ws"
+	case "https":
+		u.Scheme = "wss"
+	}
+	u.Path = "/ws"
+	u.RawQuery = "token=" + url.QueryEscape(c.token)
+	return u.String(), nil
 }
 
 func (c *Client) GetClipboard() (string, error) {

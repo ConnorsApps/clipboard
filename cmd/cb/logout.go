@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/rs/zerolog/log"
 	"github.com/urfave/cli/v3"
 )
 
@@ -18,7 +19,7 @@ func logoutCommand() *cli.Command {
 			if err != nil && !errors.Is(err, os.ErrNotExist) {
 				return fmt.Errorf("failed to remove config: %w", err)
 			}
-			fmt.Fprintln(os.Stderr, successStyle.Render("Logged out"))
+			log.Info().Msg("Logged out")
 			return nil
 		},
 	}

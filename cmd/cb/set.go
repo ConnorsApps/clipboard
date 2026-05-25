@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/ConnorsApps/clipboard/pkg/cbclient"
+	"github.com/rs/zerolog/log"
 	"github.com/urfave/cli/v3"
 )
 
@@ -32,6 +33,9 @@ func setCommand() *cli.Command {
 			if cmd.Args().Len() > 0 {
 				content = strings.Join(cmd.Args().Slice(), " ")
 			} else {
+				if stat, _ := os.Stdin.Stat(); (stat.Mode() & os.ModeCharDevice) != 0 {
+					return fmt.Errorf("no content provided — pass text as argument or pipe via stdin")
+				}
 				data, err := io.ReadAll(os.Stdin)
 				if err != nil {
 					return fmt.Errorf("failed to read stdin: %w", err)
@@ -43,7 +47,11 @@ func setCommand() *cli.Command {
 				content = strings.TrimRight(content, " \t\r\n")
 			}
 
-			return client.SetClipboard(content)
+			if err := client.SetClipboard(content); err != nil {
+				return err
+			}
+			log.Info().Msg("Clipboard set")
+			return nil
 		},
 	}
 }

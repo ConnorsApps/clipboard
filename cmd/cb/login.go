@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/rs/zerolog/log"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/term"
 )
@@ -67,7 +68,7 @@ func loginCommand() *cli.Command {
 				return fmt.Errorf("failed to save config: %w", err)
 			}
 
-			fmt.Fprintln(os.Stderr, successStyle.Render("Logged in successfully"))
+			log.Info().Msg("Logged in successfully")
 			return nil
 		},
 	}

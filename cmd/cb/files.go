@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/ConnorsApps/clipboard/pkg/cbclient"
+	"github.com/rs/zerolog/log"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/term"
 )
@@ -84,7 +85,7 @@ func filesListCommand() *cli.Command {
 			}
 
 			if len(files) == 0 {
-				fmt.Fprintln(os.Stderr, dimStyle.Render("No files uploaded"))
+				log.Info().Msg("No files uploaded")
 				return nil
 			}
 			for _, f := range files {
@@ -184,7 +185,7 @@ func filesDownloadCommand() *cli.Command {
 				return err
 			}
 			fmt.Fprintln(os.Stderr) // newline after progress
-			fmt.Fprintf(os.Stderr, "%s\n", successStyle.Render("Saved "+outPath))
+			log.Info().Str("path", outPath).Msg("Saved")
 			return nil
 		},
 	}
@@ -220,7 +221,7 @@ func filesUploadCommand() *cli.Command {
 				return err
 			}
 			fmt.Fprintln(os.Stderr)
-			fmt.Fprintln(os.Stderr, successStyle.Render("Uploaded "+path))
+			log.Info().Str("path", path).Msg("Uploaded")
 			return nil
 		},
 	}
@@ -241,7 +242,7 @@ func filesDeleteCommand() *cli.Command {
 			if err := client.DeleteFile(id); err != nil {
 				return err
 			}
-			fmt.Fprintln(os.Stderr, successStyle.Render("Deleted "+id))
+			log.Info().Str("id", id).Msg("Deleted")
 			return nil
 		},
 	}

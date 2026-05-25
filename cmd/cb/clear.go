@@ -2,30 +2,23 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"os"
 
 	"github.com/ConnorsApps/clipboard/pkg/cbclient"
+	"github.com/rs/zerolog/log"
 	"github.com/urfave/cli/v3"
-	"golang.org/x/term"
 )
 
-func getCommand() *cli.Command {
+func clearCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "get",
-		Usage: "Print clipboard content",
+		Name:  "clear",
+		Usage: "Clear clipboard content",
 		Action: func(_ context.Context, _ *cli.Command) error {
 			cfg := mustLoadConfig()
 			client := cbclient.NewClient(cfg.ServerURL, cfg.Token)
-			content, err := client.GetClipboard()
-			if err != nil {
+			if err := client.SetClipboard(""); err != nil {
 				return err
 			}
-			if term.IsTerminal(int(os.Stdout.Fd())) {
-				fmt.Println(content)
-			} else {
-				fmt.Print(content)
-			}
+			log.Info().Msg("Clipboard cleared")
 			return nil
 		},
 	}
