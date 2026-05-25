@@ -1,11 +1,1 @@
-{
-  "root": [
-    "./src/App.tsx",
-    "./src/Clipboard.tsx",
-    "./src/Files.tsx",
-    "./src/Layout.tsx",
-    "./src/Login.tsx",
-    "./src/main.tsx"
-  ],
-  "version": "5.9.3"
-}
+{"root":["./src/App.tsx","./src/Clipboard.tsx","./src/Files.tsx","./src/Layout.tsx","./src/Login.tsx","./src/main.tsx","./src/vite-env.d.ts"],"version":"6.0.3"}
