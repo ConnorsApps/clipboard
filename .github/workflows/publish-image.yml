@@ -9,6 +9,7 @@ on:
       - "**/*.go"
       - go.mod
       - go.sum
+      - "frontend/**"
   workflow_dispatch:
     inputs:
       image_tag:
