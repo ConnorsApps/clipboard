@@ -17,8 +17,9 @@ import (
 
 func loginCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "login",
-		Usage: "Authenticate with a clipboard server",
+		Name:    "login",
+		Aliases: []string{"li"},
+		Usage:   "Authenticate with a clipboard server",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:  "server",

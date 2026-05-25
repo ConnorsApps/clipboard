@@ -21,13 +21,14 @@ go build -o cb ./cmd/cb       # Build CLI binary
 go run ./cmd/cb               # Run CLI without building
 
 cb login                      # Authenticate (prompts for server URL + password)
-cb get                        # Print clipboard content
-cb set <text>                 # Set clipboard content (reads stdin if no arg)
-cb watch                      # Stream clipboard updates in real time via WebSocket
-cb files list                 # List uploaded files
-cb files upload <path>        # Upload a file
-cb files download [id]        # Download a file (interactive picker if no id)
-cb files delete <id>          # Delete a file
+cb get                        # Print clipboard content (no trailing newline when piped)
+cb set [text]                 # Set clipboard content (reads stdin if no arg; --trim flag, default on)
+cb clear                      # Clear clipboard content
+cb live                       # Live TUI viewer/editor (bubbletea; e/i=edit, c=copy, ctrl+d=clear, q=quit)
+cb files list [--json]        # List uploaded files
+cb files upload <path>        # Upload a file (with progress; tab-completes paths)
+cb files download [id] [-o]   # Download a file (interactive picker if no id; pipes to stdout if not a tty)
+cb files clear                # Delete all uploaded files
 cb logout                     # Remove saved credentials
 ```
 
@@ -74,8 +75,8 @@ helm install my-clipboard clipboard/clipboard -f my-values.yaml    # Deploy
 
 ### CLI Package (`cmd/cb/`, `pkg/cbclient/`)
 
-- **`cmd/cb/`** — CLI entry point built with `urfave/cli/v3` and `lipgloss` for styled output; commands: `login`, `get`, `set`, `watch`, `files`, `logout`
-- **`pkg/cbclient/`** — Reusable Go client library wrapping the REST + tus upload API
+- **`cmd/cb/`** — CLI entry point built with `urfave/cli/v3` and `lipgloss` for styled output; commands: `login`, `get`, `set`, `clear`, `live`, `files`, `logout`; shell completion enabled via `EnableShellCompletion: true`
+- **`pkg/cbclient/`** — Reusable Go client library wrapping the REST + tus upload API; `DownloadFileAt` supports byte-range resumable downloads
 
 ### Environment Variables
 
@@ -104,4 +105,5 @@ helm install my-clipboard clipboard/clipboard -f my-values.yaml    # Deploy
 - The Helm chart uses a `Recreate` (not `RollingUpdate`) deployment strategy to avoid token loss when using the in-memory token store.
 - Vite dev server proxies `/api` and `/ws` to `localhost:8080` — run the Go backend separately when doing frontend dev.
 - The Docker build is 3-stage: Node 24 builds the frontend, Go builds the binary, Alpine is the final runtime image.
-- The `cb watch` command connects to `/ws` and filters for `content`-type messages, converting `http://` → `ws://` and `https://` → `wss://` automatically.
+- The `cb live` command is a bubbletea TUI that connects to `/ws`, filters for `content`-type messages, and supports in-place editing, local clipboard copy (via `github.com/atotto/clipboard`), and auto-reconnect with exponential backoff.
+- `cb files download` retries with exponential backoff (up to 3 attempts) using HTTP Range requests to resume interrupted downloads.

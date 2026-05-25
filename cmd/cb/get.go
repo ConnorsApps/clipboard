@@ -12,8 +12,9 @@ import (
 
 func getCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "get",
-		Usage: "Print clipboard content",
+		Name:    "get",
+		Aliases: []string{"g", "paste"},
+		Usage:   "Print clipboard content",
 		Action: func(_ context.Context, _ *cli.Command) error {
 			cfg := mustLoadConfig()
 			client := cbclient.NewClient(cfg.ServerURL, cfg.Token)

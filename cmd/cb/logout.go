@@ -12,8 +12,9 @@ import (
 
 func logoutCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "logout",
-		Usage: "Remove saved credentials",
+		Name:    "logout",
+		Aliases: []string{"lo"},
+		Usage:   "Remove saved credentials",
 		Action: func(_ context.Context, _ *cli.Command) error {
 			err := os.Remove(configPath())
 			if err != nil && !errors.Is(err, os.ErrNotExist) {

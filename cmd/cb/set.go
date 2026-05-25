@@ -15,6 +15,7 @@ import (
 func setCommand() *cli.Command {
 	return &cli.Command{
 		Name:      "set",
+		Aliases:   []string{"s", "copy"},
 		Usage:     "Set clipboard content (reads stdin if no arg)",
 		ArgsUsage: "[text]",
 		Flags: []cli.Flag{

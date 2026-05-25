@@ -95,6 +95,33 @@ func (c *Client) DownloadFile(id string) (io.ReadCloser, int64, error) {
 	return resp.Body, size, nil
 }
 
+// DownloadFileAt requests a file starting at byte offset. If offset is 0 it behaves like DownloadFile.
+func (c *Client) DownloadFileAt(id string, offset int64) (io.ReadCloser, int64, error) {
+	req, err := http.NewRequest("GET", c.serverURL+"/api/files/"+id, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	if offset > 0 {
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", offset))
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, 0, fmt.Errorf("connecting to %s: %w", c.serverURL, err)
+	}
+	if resp.StatusCode == 401 {
+		resp.Body.Close()
+		return nil, 0, fmt.Errorf("unauthorized — run 'cb login' first")
+	}
+	if resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return nil, 0, fmt.Errorf("server error %d: %s", resp.StatusCode, bytes.TrimSpace(body))
+	}
+	size, _ := strconv.ParseInt(resp.Header.Get("Content-Length"), 10, 64)
+	return resp.Body, size, nil
+}
+
 // UploadFileFromReader uploads file contents to the server using the tus creation-with-upload
 // extension. size is the byte length of r; filename is used as the remote filename.
 func (c *Client) UploadFileFromReader(r io.Reader, size int64, filename string) error {

@@ -10,8 +10,9 @@ import (
 
 func clearCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "clear",
-		Usage: "Clear clipboard content",
+		Name:    "clear",
+		Aliases: []string{"cl", "wipe"},
+		Usage:   "Clear clipboard content",
 		Action: func(_ context.Context, _ *cli.Command) error {
 			cfg := mustLoadConfig()
 			client := cbclient.NewClient(cfg.ServerURL, cfg.Token)

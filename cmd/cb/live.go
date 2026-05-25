@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/ConnorsApps/clipboard/pkg/cbclient"
+	"github.com/atotto/clipboard"
 	"github.com/gorilla/websocket"
 	"github.com/urfave/cli/v3"
 )
@@ -20,6 +22,8 @@ type wsErrorMsg struct{ err error }
 type wsConnectedMsg struct{}
 type wsReconnectingMsg struct{}
 type submitResultMsg struct{ err error }
+type copyResultMsg struct{ err error }
+type tickMsg struct{}
 
 type liveMode int
 
@@ -32,6 +36,8 @@ const (
 	liveEditHeight   = 5
 	liveStatusHeight = 1
 	liveHintHeight   = 1
+	livePaddingX     = 2
+	livePaddingY     = 1
 )
 
 type liveModel struct {
@@ -61,8 +67,12 @@ func newLiveModel(client *cbclient.Client) liveModel {
 	}
 }
 
+func tickCmd() tea.Cmd {
+	return tea.Tick(30*time.Second, func(time.Time) tea.Msg { return tickMsg{} })
+}
+
 func (m liveModel) Init() tea.Cmd {
-	return nil
+	return tickCmd()
 }
 
 func (m liveModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -88,10 +98,13 @@ func (m liveModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case wsContentMsg:
+		atBottom := m.viewport.AtBottom()
 		m.content = msg.content
 		m.lastUpdate = time.Now()
 		m.viewport.SetContent(msg.content)
-		m.viewport.GotoBottom()
+		if atBottom {
+			m.viewport.GotoBottom()
+		}
 		return m, nil
 
 	case submitResultMsg:
@@ -104,6 +117,17 @@ func (m liveModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m = m.recalcLayout()
 		}
 		return m, nil
+
+	case copyResultMsg:
+		if msg.err != nil {
+			m.statusMsg = "copy failed: " + msg.err.Error()
+		} else {
+			m.statusMsg = "copied!"
+		}
+		return m, nil
+
+	case tickMsg:
+		return m, tickCmd()
 
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
@@ -129,6 +153,8 @@ func (m liveModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.textarea.SetValue(m.content)
 			m = m.recalcLayout()
 			return m, m.textarea.Focus()
+		case "c":
+			return m, m.copyCmd()
 		case "ctrl+d":
 			m.statusMsg = "clearing..."
 			return m, m.submitCmd("")
@@ -166,18 +192,22 @@ func (m liveModel) submitCmd(content string) tea.Cmd {
 	}
 }
 
+func (m liveModel) copyCmd() tea.Cmd {
+	content := m.content
+	return func() tea.Msg {
+		return copyResultMsg{err: clipboard.WriteAll(content)}
+	}
+}
+
 func (m liveModel) recalcLayout() liveModel {
 	editZone := 0
 	if m.mode == liveModeEdit {
 		editZone = liveEditHeight + liveHintHeight
 	}
-	vpHeight := m.height - liveStatusHeight - editZone
-	if vpHeight < 1 {
-		vpHeight = 1
-	}
-	m.viewport.SetWidth(m.width)
+	vpHeight := max(m.height-liveStatusHeight-editZone-2*livePaddingY, 1)
+	m.viewport.SetWidth(m.width - 2*livePaddingX)
 	m.viewport.SetHeight(vpHeight)
-	m.textarea.SetWidth(m.width)
+	m.textarea.SetWidth(m.width - 2*livePaddingX)
 	m.textarea.SetHeight(liveEditHeight)
 	return m
 }
@@ -193,7 +223,8 @@ func (m liveModel) View() tea.View {
 		b.WriteString("\n")
 		b.WriteString(dimStyle.Render("ctrl+s submit · esc cancel"))
 	}
-	v := tea.NewView(b.String())
+	content := lipgloss.NewStyle().Padding(livePaddingY, livePaddingX).Render(b.String())
+	v := tea.NewView(content)
 	v.AltScreen = true
 	return v
 }
@@ -209,28 +240,41 @@ func (m liveModel) liveStatusBar() string {
 		connStr = errStyle.Render("✕ disconnected")
 	}
 
-	center := ""
-	if m.statusMsg != "" {
-		center = "  " + dimStyle.Render(m.statusMsg)
+	left := ""
+	if m.mode == liveModeView {
+		left = dimStyle.Render("[e]dit  [ctrl+d]clear  [c]opy  [q]uit")
 	}
 
 	var right string
-	if !m.lastUpdate.IsZero() {
-		right = dimStyle.Render("updated " + m.lastUpdate.Format("15:04:05"))
+	if m.statusMsg != "" {
+		right = dimStyle.Render(m.statusMsg) + "  "
 	}
-	if m.mode == liveModeView {
-		if right != "" {
-			right += "  "
-		}
-		right += dimStyle.Render("[e]dit  [ctrl+d]clear  [q]uit")
+	if rel := formatRelativeTime(m.lastUpdate); rel != "" {
+		right += dimStyle.Render("Updated "+rel) + "  "
 	}
+	right += connStr
 
-	used := lipgloss.Width(connStr) + lipgloss.Width(center) + lipgloss.Width(right)
-	pad := m.width - used
-	if pad < 0 {
-		pad = 0
+	innerWidth := m.width - 2*livePaddingX
+	used := lipgloss.Width(left) + lipgloss.Width(right)
+	pad := max(innerWidth-used, 0)
+	return left + strings.Repeat(" ", pad) + right
+}
+
+func formatRelativeTime(t time.Time) string {
+	if t.IsZero() {
+		return ""
 	}
-	return connStr + center + strings.Repeat(" ", pad) + right
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	}
 }
 
 func liveConnectAndListen(p *tea.Program, wsURL string) {
@@ -277,8 +321,9 @@ func liveConnectAndListen(p *tea.Program, wsURL string) {
 
 func liveCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "live",
-		Usage: "Live clipboard viewer and editor",
+		Name:    "live",
+		Aliases: []string{"l", "tui"},
+		Usage:   "Live clipboard viewer and editor",
 		Action: func(_ context.Context, _ *cli.Command) error {
 			cfg := mustLoadConfig()
 			client := cbclient.NewClient(cfg.ServerURL, cfg.Token)
