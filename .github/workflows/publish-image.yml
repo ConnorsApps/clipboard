@@ -62,5 +62,6 @@ jobs:
           file: ./Dockerfile
           push: true
           platforms: linux/amd64
+          provenance: false
           tags: |
             ${{ steps.vars.outputs.image }}:${{ steps.vars.outputs.image_tag }}
