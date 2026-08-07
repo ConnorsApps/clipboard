@@ -104,9 +104,35 @@ function Clipboard() {
     sendUpdate(newContent)
   }
 
+  // iOS Safari's navigator.clipboard.writeText() runs URL-detection on the
+  // string: if it looks like it contains a link, WebKit stores the whole
+  // clipboard payload as a `public.url` UTI instead of plain text, which
+  // apps like Notes/Messages then render percent-encoded (spaces as %20,
+  // newlines as %0A). The legacy execCommand('copy') path via a selected
+  // textarea skips that heuristic and always writes plain text.
+  const copyPlainText = (text: string): boolean => {
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.focus()
+    textarea.select()
+    let success = false
+    try {
+      success = document.execCommand('copy')
+    } catch {
+      success = false
+    }
+    document.body.removeChild(textarea)
+    return success
+  }
+
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(content)
+      if (!copyPlainText(content)) {
+        await navigator.clipboard.writeText(content)
+      }
       setCopyFeedback('Copied!')
       setTimeout(() => setCopyFeedback(''), 2000)
     } catch {
