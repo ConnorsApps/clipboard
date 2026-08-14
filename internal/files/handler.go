@@ -243,8 +243,15 @@ func (s *Service) HandleFile(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		// Download file
-		w.Header().Set("Content-Disposition", "attachment; filename=\""+fileID+"\"")
+		// Download file with the original filename, not the on-disk storage ID
+		originalName := s.getOriginalFilename(fileID)
+		asciiName := strings.Map(func(r rune) rune {
+			if r < 0x20 || r == '"' || r > 0x7e {
+				return '_'
+			}
+			return r
+		}, originalName)
+		w.Header().Set("Content-Disposition", "attachment; filename=\""+asciiName+"\"; filename*=UTF-8''"+url.QueryEscape(originalName))
 		http.ServeFile(w, r, filePath)
 
 	case http.MethodDelete:
