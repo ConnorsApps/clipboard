@@ -3,7 +3,7 @@ name: clipboard
 description: Shared clipboard service with WebSocket sync
 type: application
 version: 2.0.0
-appVersion: "1.0.0"
+appVersion: "0.1.0"
 home: https://github.com/ConnorsApps/clipboard
 sources:
   - https://github.com/ConnorsApps/clipboard
