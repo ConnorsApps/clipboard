@@ -1,10 +1,15 @@
 package clipboard
 
 import (
+	"errors"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
+
+// writeWait bounds how long a single slow client can hold up a broadcast
+const writeWait = 10 * time.Second
 
 // WSMessageType represents the type of WebSocket message
 type WSMessageType string
@@ -27,16 +32,18 @@ type WSMessage struct {
 
 // Service manages clipboard state and WebSocket connections for a single user
 type Service struct {
-	content   string
-	mu        sync.RWMutex
-	clients   map[*websocket.Conn]bool
+	content string
+	mu      sync.RWMutex
+	// clients maps each connection to its write lock: gorilla/websocket supports only
+	// one concurrent writer, and broadcasts arrive from reader and tusd goroutines
+	clients   map[*websocket.Conn]*sync.Mutex
 	clientsMu sync.RWMutex
 }
 
 // New creates a new clipboard service
 func New() *Service {
 	return &Service{
-		clients: make(map[*websocket.Conn]bool),
+		clients: make(map[*websocket.Conn]*sync.Mutex),
 	}
 }
 
@@ -95,7 +102,7 @@ func (s *Service) ClearContent() {
 // RegisterClient adds a WebSocket client to the service
 func (s *Service) RegisterClient(conn *websocket.Conn) {
 	s.clientsMu.Lock()
-	s.clients[conn] = true
+	s.clients[conn] = &sync.Mutex{}
 	s.clientsMu.Unlock()
 }
 
@@ -106,16 +113,35 @@ func (s *Service) UnregisterClient(conn *websocket.Conn) {
 	s.clientsMu.Unlock()
 }
 
+// writeJSON writes msg to conn while holding that connection's write lock
+func writeJSON(conn *websocket.Conn, writeMu *sync.Mutex, msg WSMessage) error {
+	writeMu.Lock()
+	defer writeMu.Unlock()
+	conn.SetWriteDeadline(time.Now().Add(writeWait))
+	return conn.WriteJSON(msg)
+}
+
+// Send writes a message to a single registered client
+func (s *Service) Send(conn *websocket.Conn, msg WSMessage) error {
+	s.clientsMu.RLock()
+	writeMu, ok := s.clients[conn]
+	s.clientsMu.RUnlock()
+	if !ok {
+		return errors.New("client not registered")
+	}
+	return writeJSON(conn, writeMu, msg)
+}
+
 // Broadcast sends a message to all connected clients except the excluded one
 func (s *Service) Broadcast(msg WSMessage, exclude *websocket.Conn) {
 	s.clientsMu.RLock()
 	defer s.clientsMu.RUnlock()
 
-	for client := range s.clients {
+	for client, writeMu := range s.clients {
 		if client == exclude {
 			continue
 		}
-		if err := client.WriteJSON(msg); err != nil {
+		if err := writeJSON(client, writeMu, msg); err != nil {
 			// Log error but continue broadcasting to other clients
 			continue
 		}
@@ -124,18 +150,5 @@ func (s *Service) Broadcast(msg WSMessage, exclude *websocket.Conn) {
 
 // BroadcastFilesList sends a files list update to all connected clients
 func (s *Service) BroadcastFilesList(files interface{}) {
-	s.clientsMu.RLock()
-	defer s.clientsMu.RUnlock()
-
-	msg := WSMessage{
-		Type:  FilesList,
-		Files: files,
-	}
-
-	for client := range s.clients {
-		if err := client.WriteJSON(msg); err != nil {
-			// Log error but continue broadcasting to other clients
-			continue
-		}
-	}
+	s.Broadcast(WSMessage{Type: FilesList, Files: files}, nil)
 }

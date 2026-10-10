@@ -13,6 +13,7 @@ import (
 type FileInfo struct {
 	ID         string `json:"id"`
 	Name       string `json:"name"`
+	Type       string `json:"type"`
 	Size       int64  `json:"size"`
 	UploadedAt string `json:"uploadedAt"`
 }
@@ -20,13 +21,15 @@ type FileInfo struct {
 // TusdInfoMetadata represents metadata in tusd .info files
 type TusdInfoMetadata struct {
 	Filename string `json:"filename"`
+	Filetype string `json:"filetype"`
 }
 
 // TusdInfo represents the structure of tusd .info files
 type TusdInfo struct {
-	Size     int64            `json:"Size"`
-	Offset   int64            `json:"Offset"`
-	MetaData TusdInfoMetadata `json:"MetaData"`
+	Size           int64            `json:"Size"`
+	SizeIsDeferred bool             `json:"SizeIsDeferred"`
+	Offset         int64            `json:"Offset"`
+	MetaData       TusdInfoMetadata `json:"MetaData"`
 }
 
 // NewTusdHandler creates and configures a new tusd handler

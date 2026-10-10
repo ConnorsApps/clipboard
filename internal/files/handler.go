@@ -2,10 +2,13 @@ package files
 
 import (
 	"encoding/json"
+	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -113,6 +116,16 @@ func (m *Manager) ListFiles(w http.ResponseWriter, r *http.Request) {
 	svc.ListFiles(w, r)
 }
 
+// FilesForUser returns the current file list for the given user
+func (m *Manager) FilesForUser(userID string) []FileInfo {
+	svc, _, err := m.GetOrCreate(userID)
+	if err != nil {
+		log.Error().Err(err).Str("userID", userID).Msg("Failed to get files service")
+		return []FileInfo{}
+	}
+	return svc.getFilesList()
+}
+
 // HandleUpload routes the request to the authenticated user's tusd handler.
 // The tusd handler expects the path with the base prefix stripped (e.g. "" or "upload-id").
 func (m *Manager) HandleUpload(w http.ResponseWriter, r *http.Request) {
@@ -151,29 +164,77 @@ func cloneURL(u *url.URL) *url.URL {
 	return &u2
 }
 
-// getOriginalFilename reads the original filename from the tusd .info file
-func (s *Service) getOriginalFilename(fileID string) string {
-	infoPath := filepath.Join(s.filesDir, fileID+".info")
-	data, err := os.ReadFile(infoPath)
-	if err != nil {
-		log.Warn().Err(err).Str("file", fileID).Msg("Failed to read .info file")
-		return fileID
-	}
-
-	var info TusdInfo
-	if err := json.Unmarshal(data, &info); err != nil {
-		log.Warn().Err(err).Str("file", fileID).Msg("Failed to parse .info file")
-		return fileID
-	}
-
-	if info.MetaData.Filename != "" {
-		return info.MetaData.Filename
-	}
-
-	return fileID
+// extraTypes covers common phone media that Go's built-in MIME table lacks
+// (the Alpine runtime image ships no /etc/mime.types)
+var extraTypes = map[string]string{
+	".heic": "image/heic",
+	".heif": "image/heif",
+	".mov":  "video/quicktime",
+	".mp4":  "video/mp4",
+	".m4v":  "video/mp4",
+	".webm": "video/webm",
+	".mp3":  "audio/mpeg",
+	".m4a":  "audio/mp4",
+	".txt":  "text/plain; charset=utf-8",
 }
 
-// getFilesList returns the current list of files
+// fileMeta is what is known about a stored upload
+type fileMeta struct {
+	name     string
+	mimeType string
+	complete bool
+}
+
+// readMeta reads the original filename, MIME type and completion state of a stored upload.
+// Uploads without a readable .info file are treated as complete and named by their ID.
+func (s *Service) readMeta(fileID string, sizeOnDisk int64) fileMeta {
+	meta := fileMeta{name: fileID, complete: true}
+
+	infoPath := filepath.Join(s.filesDir, fileID+".info")
+	if data, err := os.ReadFile(infoPath); err != nil {
+		log.Warn().Err(err).Str("file", fileID).Msg("Failed to read .info file")
+	} else {
+		var info TusdInfo
+		if err := json.Unmarshal(data, &info); err != nil {
+			log.Warn().Err(err).Str("file", fileID).Msg("Failed to parse .info file")
+		} else {
+			if info.MetaData.Filename != "" {
+				meta.name = info.MetaData.Filename
+			}
+			meta.mimeType = info.MetaData.Filetype
+			// tusd creates the binary file empty and appends chunks, so an upload
+			// is finished once the bytes on disk reach the declared size
+			meta.complete = !info.SizeIsDeferred && sizeOnDisk >= info.Size
+		}
+	}
+
+	if meta.mimeType == "" {
+		meta.mimeType = detectType(filepath.Join(s.filesDir, fileID), meta.name)
+	}
+	return meta
+}
+
+// detectType guesses a MIME type from the filename extension, falling back to content sniffing
+func detectType(path, name string) string {
+	ext := strings.ToLower(filepath.Ext(name))
+	if t := mime.TypeByExtension(ext); t != "" {
+		return t
+	}
+	if t, ok := extraTypes[ext]; ok {
+		return t
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		return "application/octet-stream"
+	}
+	defer f.Close()
+	buf := make([]byte, 512)
+	n, _ := io.ReadFull(f, buf)
+	return http.DetectContentType(buf[:n])
+}
+
+// getFilesList returns the completed uploads, newest first
 func (s *Service) getFilesList() []FileInfo {
 	files := []FileInfo{}
 
@@ -184,13 +245,14 @@ func (s *Service) getFilesList() []FileInfo {
 		return files
 	}
 
+	modTimes := make(map[string]time.Time, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
 		}
 
-		// Skip .info files created by tusd
-		if strings.HasSuffix(entry.Name(), ".info") {
+		// Skip tusd's metadata and lock files
+		if strings.HasSuffix(entry.Name(), ".info") || strings.HasSuffix(entry.Name(), ".lock") {
 			continue
 		}
 
@@ -200,16 +262,24 @@ func (s *Service) getFilesList() []FileInfo {
 			continue
 		}
 
-		// Get original filename from .info file
-		originalName := s.getOriginalFilename(entry.Name())
+		meta := s.readMeta(entry.Name(), info.Size())
+		if !meta.complete {
+			continue
+		}
 
+		modTimes[entry.Name()] = info.ModTime()
 		files = append(files, FileInfo{
 			ID:         entry.Name(),
-			Name:       originalName,
+			Name:       meta.name,
+			Type:       meta.mimeType,
 			Size:       info.Size(),
 			UploadedAt: info.ModTime().Format(time.RFC3339),
 		})
 	}
+
+	sort.SliceStable(files, func(i, j int) bool {
+		return modTimes[files[i].ID].After(modTimes[files[j].ID])
+	})
 
 	return files
 }
@@ -236,15 +306,21 @@ func (s *Service) HandleFile(w http.ResponseWriter, r *http.Request) {
 	filePath := filepath.Join(s.filesDir, fileID)
 
 	// Check if file exists
-	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+	stat, err := os.Stat(filePath)
+	if os.IsNotExist(err) {
 		http.Error(w, "File not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	switch r.Method {
 	case http.MethodGet:
 		// Download file with the original filename, not the on-disk storage ID
-		originalName := s.getOriginalFilename(fileID)
+		meta := s.readMeta(fileID, stat.Size())
+		originalName := meta.name
 		asciiName := strings.Map(func(r rune) rune {
 			if r < 0x20 || r == '"' || r > 0x7e {
 				return '_'
@@ -252,6 +328,9 @@ func (s *Service) HandleFile(w http.ResponseWriter, r *http.Request) {
 			return r
 		}, originalName)
 		w.Header().Set("Content-Disposition", "attachment; filename=\""+asciiName+"\"; filename*=UTF-8''"+url.QueryEscape(originalName))
+		// Stored files have no extension, so set the type explicitly rather than relying on sniffing
+		w.Header().Set("Content-Type", meta.mimeType)
+		w.Header().Set("X-Content-Type-Options", "nosniff")
 		http.ServeFile(w, r, filePath)
 
 	case http.MethodDelete:

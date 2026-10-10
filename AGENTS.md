@@ -13,6 +13,7 @@ A shared clipboard service with real-time WebSocket sync for sharing text and fi
 go build -o server .          # Build server binary
 go run .                      # Run without live reload
 wgo run .                     # Live reload (install: go install github.com/bokwoon95/wgo@latest)
+go test -race ./...           # Run tests
 ```
 
 ### CLI (`cb`)
@@ -62,16 +63,27 @@ helm install my-clipboard clipboard/clipboard -f my-values.yaml    # Deploy
 
 ## Architecture
 
-**Stack**: React 19 + TypeScript + Vite (frontend), Go 1.25 + Gorilla WebSocket + tusd v2 (backend), optional MongoDB.
+**Stack**: React 19 + TypeScript + Vite + Tailwind v4 + tus-js-client (frontend), Go 1.25 + Gorilla WebSocket + tusd v2 (backend), optional MongoDB.
 
 ### Backend Packages (`internal/`)
 
 - **`server/`** — HTTP server setup, routing, middleware (CORS, token auth, user context injection), SPA fallback to `index.html`
 - **`auth/`** — Password login, token generation (64-char hex, crypto random), user ID derivation (SHA-256 of password, first 16 chars)
 - **`tokenstore/`** — Interface with two implementations: in-memory (volatile) and MongoDB (persistent, TTL configurable via `TOKEN_EXPIRY`)
-- **`clipboard/`** — Per-user in-memory WebSocket connection map; broadcasts `update`, `clear`, and `files_list` messages to all connected clients
-- **`files/`** — Per-user file storage, tusd integration for resumable uploads, broadcasts file list changes over WebSocket
+- **`clipboard/`** — Per-user in-memory WebSocket connection map; broadcasts `content` and `files_list` messages to all connected clients. Each connection has its own write lock (gorilla allows only one concurrent writer)
+- **`files/`** — Per-user file storage, tusd integration for resumable uploads, broadcasts file list changes over WebSocket. The list hides tusd `.info`/`.lock` files and uploads still in progress, reports each file's MIME `type` (tus `filetype` metadata → extension → content sniffing), and is sorted newest first
 - **`config/`** — Loads all config from environment variables
+
+### Frontend (`frontend/src/`)
+
+A single screen (no router): shared text on top, a thumbnail grid of images/files below (side by side on wide screens), and an add bar (Paste / Photos / Camera / Files) that is a fixed bottom dock on phones.
+
+- **`App.tsx`** — Switches between `Login` and `Home` based on the token in `localStorage`
+- **`useSync.ts`** — The one WebSocket: shared text, file list, connection state; reconnects with backoff and immediately when the tab becomes visible or goes online; text edited while offline is pushed on reconnect
+- **`useUploads.ts`** — Upload queue (3 parallel) over tus with local previews; a finished upload hands its preview over once the server's `files_list` includes it
+- **`Home.tsx`** — Layout plus global paste (images upload; text outside the text box replaces the shared text; `text/plain` wins when both are present) and drag-and-drop
+- **`FileViewer.tsx`** — Full-screen preview with Copy image / Share / Download / Delete; pushes a history entry so Back closes it
+- **`clipboard.ts`** — Copy text (iOS-safe `execCommand` path), copy image (as PNG via `ClipboardItem`), read the system clipboard for the Paste button
 
 ### CLI Package (`cmd/cb/`, `pkg/cbclient/`)
 
@@ -94,16 +106,17 @@ helm install my-clipboard clipboard/clipboard -f my-values.yaml    # Deploy
 - `POST /api/login` — Returns a token
 - `GET /api/clipboard` — Get current clipboard content
 - `POST /api/clipboard` — Set clipboard content
-- `GET /api/files` — List uploaded files
-- `GET /api/files/<id>` — Download a file
+- `GET /api/files` — List uploaded files (`id`, `name`, `type`, `size`, `uploadedAt`; newest first)
+- `GET /api/files/<id>` — Download a file (`Content-Type` from stored metadata)
 - `DELETE /api/files/<id>` — Delete a file
-- `POST/PATCH /api/uploads` — tusd resumable upload endpoints
-- `GET /ws` — WebSocket for real-time clipboard + file-list sync
+- `POST/PATCH/HEAD /api/uploads` — tusd resumable upload endpoints (HEAD is authenticated so interrupted uploads can resume)
+- `GET /ws` — WebSocket for real-time clipboard + file-list sync; sends `content` then `files_list` right after connecting
 
 ### Key Integration Points
 
 - The Helm chart uses a `Recreate` (not `RollingUpdate`) deployment strategy to avoid token loss when using the in-memory token store.
 - Vite dev server proxies `/api` and `/ws` to `localhost:8080` — run the Go backend separately when doing frontend dev.
+- `<img>`/`<video>` sources and download links pass the token as a `?token=` query parameter, since they can't send an `Authorization` header.
 - The Docker build is 3-stage: Node 24 builds the frontend, Go builds the binary, Alpine is the final runtime image.
 - The `cb live` command is a bubbletea TUI that connects to `/ws`, filters for `content`-type messages, and supports in-place editing, local clipboard copy (via `github.com/atotto/clipboard`), and auto-reconnect with exponential backoff.
 - `cb files download` retries with exponential backoff (up to 3 attempts) using HTTP Range requests to resume interrupted downloads.

@@ -21,7 +21,8 @@ var upgrader = websocket.Upgrader{
 
 // HandleWebSocket creates a WebSocket handler function that routes to the clipboard service for the authenticated user.
 // Store errors return 503 so the client can retry without clearing the token.
-func (m *Manager) HandleWebSocket(getUserID func(string) (string, bool, error)) http.HandlerFunc {
+// filesForUser, if set, supplies the file list sent to each client right after it connects.
+func (m *Manager) HandleWebSocket(getUserID func(string) (string, bool, error), filesForUser func(userID string) interface{}) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -51,10 +52,15 @@ func (m *Manager) HandleWebSocket(getUserID func(string) (string, bool, error)) 
 		s.RegisterClient(conn)
 		log.Info().Str("userID", userID).Msg("WebSocket client connected")
 
-		// Send current clipboard content
+		// Send current clipboard content and file list
 		content := s.GetContent()
-		if err := conn.WriteJSON(WSMessage{Type: "content", Content: content}); err != nil {
+		if err := s.Send(conn, WSMessage{Type: "content", Content: content}); err != nil {
 			log.Error().Err(err).Msg("Failed to send initial content")
+		}
+		if filesForUser != nil {
+			if err := s.Send(conn, WSMessage{Type: FilesList, Files: filesForUser(userID)}); err != nil {
+				log.Error().Err(err).Msg("Failed to send initial files list")
+			}
 		}
 
 		// Ping goroutine keeps the connection alive through proxies with short idle timeouts

@@ -1,1 +1,1 @@
-{"root":["./src/App.tsx","./src/Clipboard.tsx","./src/Files.tsx","./src/Layout.tsx","./src/Login.tsx","./src/main.tsx","./src/vite-env.d.ts"],"version":"6.0.3"}
+{"root":["./src/AddBar.tsx","./src/App.tsx","./src/DropOverlay.tsx","./src/FileGrid.tsx","./src/FileViewer.tsx","./src/Home.tsx","./src/Login.tsx","./src/TextPanel.tsx","./src/Toast.tsx","./src/api.ts","./src/clipboard.ts","./src/format.ts","./src/icons.tsx","./src/main.tsx","./src/useSync.ts","./src/useUploads.ts","./src/vite-env.d.ts"],"version":"6.0.3"}

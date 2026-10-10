@@ -98,11 +98,14 @@ func main() {
 		return server.UserIDFromContext(r.Context())
 	}
 	filesMgr := files.NewManager(cfg.FilesDir, broadcastForUser, getUserIDFromRequest)
+	filesForUser := func(userID string) interface{} {
+		return filesMgr.FilesForUser(userID)
+	}
 
 	// Create and run server
 	srv := server.New(
 		cfg,
-		clipboardMgr.HandleWebSocket(authSvc.GetUserID),
+		clipboardMgr.HandleWebSocket(authSvc.GetUserID, filesForUser),
 		clipboardMgr.HandleGetClipboard(getUserIDFromRequest),
 		clipboardMgr.HandleSetClipboard(getUserIDFromRequest),
 		filesMgr.HandleFile,
