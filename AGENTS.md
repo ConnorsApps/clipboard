@@ -22,7 +22,7 @@ go build -o cb ./cmd/cb       # Build CLI binary
 go run ./cmd/cb               # Run CLI without building
 
 cb login                      # Authenticate (prompts for server URL + password)
-cb get                        # Print clipboard content (no trailing newline when piped)
+cb get                        # Print clipboard content and copy it to the local system clipboard (no trailing newline when piped; piped output is only copied with --copy/-c; --copy=false disables on a tty)
 cb set [text]                 # Set clipboard content (reads stdin if no arg; --trim flag, default on)
 cb clear                      # Clear clipboard content
 cb live                       # Live TUI viewer/editor (bubbletea; e/i=edit, c=copy, ctrl+d=clear, q=quit)

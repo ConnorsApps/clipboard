@@ -22,7 +22,7 @@ cb login --server https://clipboard.example.com   # prompts for the password
 
 | Command | |
 | --- | --- |
-| `cb get` | Print the clipboard (pipe-friendly) |
+| `cb get` | Print the clipboard and copy it to your local system clipboard (pipe-friendly: piped output isn't copied unless `--copy`) |
 | `cb set [text]` | Set from args or stdin: `echo hi \| cb set` |
 | `cb clear` | Empty the clipboard |
 | `cb live` | Live TUI: `e` edit, `ctrl+s` send, `c` copy, `q` quit |
