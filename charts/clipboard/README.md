@@ -30,11 +30,6 @@ httpRoute:
   hostnames: [clipboard.example.com]
 ```
 
-## Upgrading from 1.x
-
-Chart 2.0 dropped HULL. See [Upgrading from chart 1.x](https://github.com/ConnorsApps/clipboard#upgrading-from-chart-1x).
-Annotate the old PVC with `helm.sh/resource-policy=keep` first, or Helm deletes it.
-
 ## Releasing
 
 Bump `version` in `Chart.yaml` and merge to `main`; the workflow publishes via
