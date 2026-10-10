@@ -1,0 +1,70 @@
+nameOverride: ""
+fullnameOverride: ""
+commonLabels: {}
+
+image:
+  repository: ghcr.io/connorsapps/clipboard
+  tag: latest
+  # Only the `latest` tag is published, so always pull.
+  pullPolicy: Always
+imagePullSecrets: []
+
+# Application config (see the README for what each setting does).
+config:
+  # Comma-separated passwords; each password is one user. Required unless
+  # existingSecret is set. The app would otherwise fall back to the password "1234".
+  passwords: ""
+  # Optional. Persists auth tokens across restarts; unset keeps tokens in memory.
+  mongodbUri: ""
+  # "10d", "30d", "never", ... Empty uses the app default (30d). Only applies with mongodbUri.
+  tokenExpiry: ""
+
+# Use a Secret you manage instead of one rendered from config.passwords/mongodbUri.
+# It needs the key CLIPBOARD_PASSWORDS and may hold MONGODB_URI.
+existingSecret: ""
+
+# Extra container env, as a list of Kubernetes EnvVar objects.
+extraEnv: []
+
+service:
+  type: ClusterIP
+  port: 8080
+  annotations: {}
+
+# Gateway API HTTPRoute (needs the Gateway API CRDs and an existing Gateway).
+# Long-lived WebSockets (/ws) and large uploads (/api/uploads) pass through it,
+# so make sure the Gateway's request timeouts allow both.
+httpRoute:
+  enabled: false
+  annotations: {}
+  parentRef:
+    name: ""          # required when enabled: the Gateway to attach to
+    namespace: ""     # Gateway namespace; empty means the release namespace
+    sectionName: ""   # listener name; empty attaches to every listener
+  hostnames: []       # empty matches any hostname the listener allows
+
+# Uploaded files live in /data.
+persistence:
+  enabled: true       # false uses an emptyDir: files are lost when the pod is rescheduled
+  existingClaim: ""   # use an existing PVC instead of creating one
+  storageClass: ""    # empty uses the cluster default
+  accessModes:
+    - ReadWriteOnce
+  size: 10Gi
+  annotations: {}
+
+resources:
+  limits:
+    cpu: 100m
+    memory: 128Mi
+  requests:
+    cpu: 10m
+    memory: 32Mi
+
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

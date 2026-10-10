@@ -11,5 +11,6 @@ frontend/dist/
 tmp-files/
 clipboard
 !internal/clipboard
+!charts/clipboard
 !.github
 settings.local.json

@@ -1,4 +1,4 @@
-.PHONY: install dev docker helm
+.PHONY: install dev docker helm-test
 
 install:
 	go install ./cmd/cb
@@ -9,5 +9,5 @@ dev:
 docker:
 	./scripts/docker-build-and-push.sh $(ARGS)
 
-helm:
-	./scripts/package-chart.sh
+helm-test:
+	./scripts/helm-test.sh

@@ -1,0 +1,68 @@
+name: Release Helm Chart
+
+# Pushing a bumped `version` in charts/clipboard/Chart.yaml to main publishes a
+# GitHub Release and adds the chart to the index on the gh-pages branch:
+#   helm repo add clipboard https://connorsapps.github.io/clipboard
+# Chart changes without a version bump are tested but not released
+# (chart-releaser skips versions that already exist).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "charts/**"
+      - "tests/**"
+      - "scripts/helm-test.sh"
+      - ".github/workflows/release-charts.yml"
+  workflow_dispatch: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: azure/setup-helm@v5
+
+      - name: Lint and render the chart
+        run: ./scripts/helm-test.sh
+
+  release:
+    if: github.event_name != 'pull_request'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: azure/setup-helm@v5
+
+      - name: Configure Git
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
+      # chart-releaser publishes the index to gh-pages and needs the branch to exist.
+      - name: Create gh-pages branch if missing
+        run: |
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null; then
+            exit 0
+          fi
+          git checkout --orphan gh-pages
+          git rm -rf --quiet .
+          git commit --allow-empty -m "Initialize gh-pages for the Helm chart index"
+          git push origin gh-pages
+          git checkout --force "$GITHUB_SHA"
+
+      - uses: helm/chart-releaser-action@v1.7.0
+        with:
+          charts_dir: charts
+          skip_existing: true
+        env:
+          CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"

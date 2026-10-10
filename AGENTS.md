@@ -57,9 +57,13 @@ docker build .                              # Multi-stage build (Node → Go →
 
 ### Helm
 ```bash
-./scripts/package-chart.sh                                          # Package chart
-helm install my-clipboard clipboard/clipboard -f my-values.yaml    # Deploy
+make helm-test                                                      # Lint + render every scenario in tests/values/ (also runs in CI)
+helm template test ./charts/clipboard --set config.passwords=x     # Render locally
+helm repo add clipboard https://connorsapps.github.io/clipboard    # Published chart
+helm upgrade --install clipboard clipboard/clipboard -f my-values.yaml
 ```
+
+The chart (`charts/clipboard/`) is plain templates. It is published by `.github/workflows/release-charts.yml` (chart-releaser → GitHub Release + `gh-pages` index) when `version` in `Chart.yaml` is bumped on `main`; nothing built is committed. Bump `version` for any chart change you want released.
 
 ## Architecture
 
@@ -114,7 +118,9 @@ A single screen (no router): shared text on top, a thumbnail grid of images/file
 
 ### Key Integration Points
 
-- The Helm chart uses a `Recreate` (not `RollingUpdate`) deployment strategy to avoid token loss when using the in-memory token store.
+- The Helm chart (`charts/clipboard/templates/deployment.yaml`) uses a single replica with a `Recreate` (not `RollingUpdate`) strategy: the in-memory token store and WebSocket state are per-process, and the files PVC is ReadWriteOnce.
+- Don't change how the chart generates object names (`templates/_helpers.tpl`); the PVC holds user data and a rename on upgrade orphans it. Any new chart value needs a scenario in `tests/values/`.
+- `HTTPRoute` is off by default (`httpRoute.enabled`). `config.passwords` is required unless `existingSecret` is set, because the app silently falls back to `1234` otherwise.
 - Vite dev server proxies `/api` and `/ws` to `localhost:8080` — run the Go backend separately when doing frontend dev.
 - `<img>`/`<video>` sources and download links pass the token as a `?token=` query parameter, since they can't send an `Authorization` header.
 - The Docker build is 3-stage: Node 24 builds the frontend, Go builds the binary, Alpine is the final runtime image.

@@ -1,0 +1,12 @@
+httpRoute:
+  enabled: true
+  annotations:
+    example.com/note: test
+  parentRef:
+    name: gw
+    namespace: gw-ns
+    sectionName: https
+  hostnames:
+    - clipboard.example.com
+service:
+  port: 80
