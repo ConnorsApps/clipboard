@@ -53,6 +53,8 @@ persistence:
   size: 10Gi
   annotations: {}
 
+# Helm merges maps, so `resources: {}` keeps these defaults; to drop one, set it
+# to null (e.g. --set resources.limits=null).
 resources:
   limits:
     cpu: 100m

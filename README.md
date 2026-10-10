@@ -134,7 +134,15 @@ Values and object names changed, so upgrading in place needs two things:
      existingClaim: my-release-clipboard-files
    ```
 
-2. **Move your values.** A leftover `hull:` block makes the chart fail instead of being silently ignored.
+   **Before upgrading, tell Helm not to delete that PVC.** The 1.x release owns it, and Helm deletes anything the new release no longer renders, which would delete your files (unless the PV's reclaim policy is `Retain`):
+
+   ```bash
+   kubectl -n <namespace> annotate pvc my-release-clipboard-files helm.sh/resource-policy=keep
+   ```
+
+   Expect a short downtime: the old pod has to release the volume before the new one can mount it.
+
+2. **Move your values.** A leftover `hull:` block makes the chart fail instead of being silently ignored. If you set values from Terraform or another tool, update those too.
 
    | 1.x (under `hull.objects`) | 2.x |
    |---|---|

@@ -1,0 +1,56 @@
+# Every optional block, to catch indentation and nesting mistakes in the templates.
+commonLabels:
+  team: platform
+imagePullSecrets:
+  - name: regcred
+image:
+  tag: v1.2.3
+  pullPolicy: IfNotPresent
+config:
+  tokenExpiry: 10d
+extraEnv:
+  - name: IS_LOCAL
+    value: "true"
+  - name: FROM_CONFIGMAP
+    valueFrom:
+      configMapKeyRef:
+        name: cm
+        key: k
+service:
+  type: LoadBalancer
+  port: 9000
+  annotations:
+    svc.example.com/a: b
+httpRoute:
+  enabled: true
+  parentRef:
+    name: gw
+  hostnames:
+    - a.example.com
+    - b.example.com
+persistence:
+  annotations:
+    pvc.example.com/a: b
+podAnnotations:
+  prometheus.io/scrape: "false"
+podLabels:
+  tier: web
+podSecurityContext:
+  fsGroup: 1000
+securityContext:
+  allowPrivilegeEscalation: false
+nodeSelector:
+  disktype: ssd
+tolerations:
+  - key: dedicated
+    operator: Equal
+    value: clipboard
+    effect: NoSchedule
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: zone
+              operator: In
+              values: [a]

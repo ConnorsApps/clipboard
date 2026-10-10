@@ -1,5 +1,5 @@
 {{- if .Values.httpRoute.enabled }}
-{{- $parent := .Values.httpRoute.parentRef }}
+{{- $parent := .Values.httpRoute.parentRef | default dict }}
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:

@@ -9,6 +9,9 @@ name: Release Helm Chart
 on:
   push:
     branches: [main]
+    paths:
+      - "charts/**"
+      - ".github/workflows/release-charts.yml"
   pull_request:
     paths:
       - "charts/**"
@@ -31,11 +34,16 @@ jobs:
         run: ./scripts/helm-test.sh
 
   release:
-    if: github.event_name != 'pull_request'
+    # Only ever release from main, including for manual runs on other branches.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    # Two overlapping releases would race on the gh-pages index.
+    concurrency:
+      group: release-charts
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
         with:
@@ -58,7 +66,7 @@ jobs:
           git rm -rf --quiet .
           git commit --allow-empty -m "Initialize gh-pages for the Helm chart index"
           git push origin gh-pages
-          git checkout --force "$GITHUB_SHA"
+          git checkout --force "$GITHUB_REF_NAME"
 
       - uses: helm/chart-releaser-action@v1.7.0
         with:

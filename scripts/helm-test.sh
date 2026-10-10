@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Lint the chart and render it for every scenario in tests/values/ (each merged
+# Lint and render the chart for every scenario in tests/values/ (each merged
 # over 00-base.yaml), then check that misconfiguration fails loudly.
 #
 # Usage: scripts/helm-test.sh [out-dir] [chart-dir]
@@ -13,11 +13,13 @@ VALUES="$ROOT/tests/values"
 mkdir -p "$OUT"
 status=0
 
-helm lint "$CHART" -f "$VALUES/00-base.yaml" || status=1
-
 for f in "$VALUES"/[0-9][0-9]-*.yaml; do
   name="$(basename "$f" .yaml)"
-  [ "$name" = "00-base" ] && continue
+  helm lint "$CHART" -f "$VALUES/00-base.yaml" -f "$f" > "$OUT/$name.lint" 2>&1 || {
+    echo "FAIL lint $name:" >&2
+    cat "$OUT/$name.lint" >&2
+    status=1
+  }
   if ! helm template clipboard "$CHART" -n clipboard -f "$VALUES/00-base.yaml" -f "$f" > "$OUT/$name.yaml" 2> "$OUT/$name.err"; then
     echo "FAIL render $name: $(cat "$OUT/$name.err")" >&2
     status=1

@@ -10,6 +10,9 @@ helm upgrade --install clipboard clipboard/clipboard -n clipboard --create-names
   --set config.passwords='my-password'
 ```
 
+For several passwords use a values file (`config.passwords: "one,two"`); in
+`--set`, commas must be escaped (`one\,two`).
+
 ## What it creates
 
 | Resource | Notes |
@@ -49,8 +52,10 @@ so make sure the Gateway's request timeouts allow both.
 Chart 2.0 dropped [HULL](https://github.com/vidispine/hull). See
 [Upgrading from chart 1.x](https://github.com/ConnorsApps/clipboard#upgrading-from-chart-1x)
 for the old-to-new values table and how to keep the existing PVC with
-`persistence.existingClaim`. A leftover `hull:` block in your values makes the
-chart fail instead of being silently ignored.
+`persistence.existingClaim`. Annotate the old PVC with
+`helm.sh/resource-policy=keep` first, or Helm deletes it during the upgrade. A
+leftover `hull:` block in your values makes the chart fail instead of being
+silently ignored.
 
 ## Releasing (maintainers)
 
@@ -59,7 +64,10 @@ Bump `version` in `Chart.yaml` and merge to `main`. The
 workflow tests the chart, then uses
 [chart-releaser](https://github.com/helm/chart-releaser-action) to publish a
 GitHub Release and update the index on the `gh-pages` branch. Merging without a
-version bump releases nothing.
+version bump releases nothing. The workflow only releases from `main`.
+
+One-time setup: the first run creates the `gh-pages` branch; then set
+Settings → Pages → Source to that branch so `index.yaml` is served.
 
 ## Development
 
