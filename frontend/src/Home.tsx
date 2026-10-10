@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState, type ChangeEvent } from 'react'
 import type { FileInfo } from './api'
 import AddBar, { type PickerKind } from './AddBar'
-import { readClipboard } from './clipboard'
+import { readClipboard, textWinsOverImage } from './clipboard'
 import DropOverlay from './DropOverlay'
 import FileGrid from './FileGrid'
 import FileViewer from './FileViewer'
@@ -90,23 +90,20 @@ function Home({ onLogout }: { onLogout: () => void }) {
   }
 
   // Ctrl/Cmd+V anywhere: images are uploaded; text outside the text box replaces the shared text.
-  // Plain text wins when both are present, since apps like Word also put a picture of the text there.
+  // When both are present, textWinsOverImage decides.
   const onDocumentPaste = useEffectEvent((e: ClipboardEvent) => {
     const data = e.clipboardData
     if (!data) return
-    const hasText = data.types.includes('text/plain')
+    const text = data.types.includes('text/plain') ? data.getData('text/plain') : ''
     const pasted = Array.from(data.files)
-    if (!hasText && pasted.length > 0) {
+    if (pasted.length > 0 && !(text && textWinsOverImage(text))) {
       e.preventDefault()
       addFiles(pasted, 'paste')
       return
     }
-    if (hasText && !isEditable(e.target)) {
-      const text = data.getData('text/plain')
-      if (text) {
-        e.preventDefault()
-        replaceText(text, 'Pasted text')
-      }
+    if (text && !isEditable(e.target)) {
+      e.preventDefault()
+      replaceText(text, 'Pasted text')
     }
   })
 
@@ -121,7 +118,16 @@ function Home({ onLogout }: { onLogout: () => void }) {
 
   useEffect(() => {
     let depth = 0
-    const hasFiles = (e: DragEvent) => e.dataTransfer?.types.includes('Files') ?? false
+    // Dragging an image that's already on the page (e.g. out of the viewer to save it) also
+    // reports 'Files'; ignore drags that start here so they don't upload a duplicate
+    let internalDrag = false
+    const onStart = () => {
+      internalDrag = true
+    }
+    const onEnd = () => {
+      internalDrag = false
+    }
+    const hasFiles = (e: DragEvent) => !internalDrag && (e.dataTransfer?.types.includes('Files') ?? false)
     const onEnter = (e: DragEvent) => {
       if (!hasFiles(e)) return
       e.preventDefault()
@@ -145,11 +151,15 @@ function Home({ onLogout }: { onLogout: () => void }) {
       setDragging(false)
       onDropFiles(Array.from(e.dataTransfer!.files))
     }
+    window.addEventListener('dragstart', onStart)
+    window.addEventListener('dragend', onEnd)
     window.addEventListener('dragenter', onEnter)
     window.addEventListener('dragover', onOver)
     window.addEventListener('dragleave', onLeave)
     window.addEventListener('drop', onDrop)
     return () => {
+      window.removeEventListener('dragstart', onStart)
+      window.removeEventListener('dragend', onEnd)
       window.removeEventListener('dragenter', onEnter)
       window.removeEventListener('dragover', onOver)
       window.removeEventListener('dragleave', onLeave)
@@ -158,11 +168,11 @@ function Home({ onLogout }: { onLogout: () => void }) {
   }, [])
 
   // The viewer gets a history entry so the phone's Back gesture closes it instead of leaving
-  const openViewer = (file: FileInfo) => {
+  const openViewer = useCallback((file: FileInfo) => {
     window.history.pushState({ viewer: true }, '')
     historyPushed.current = true
     setViewingId(file.id)
-  }
+  }, [])
 
   const closeViewer = useCallback(() => {
     setViewingId(null)

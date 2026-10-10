@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import { fileUrl, type FileInfo } from './api'
 import { extension, fileKind, formatSize } from './format'
 import { CheckIcon, CloseIcon, FileIcon, PhotoIcon, PlayIcon, RetryIcon } from './icons'
@@ -198,4 +198,5 @@ function UploadTile({
   )
 }
 
-export default FileGrid
+// Memoized so typing in the text box doesn't re-render every tile
+export default memo(FileGrid)

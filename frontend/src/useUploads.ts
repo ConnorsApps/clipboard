@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { uploadFile, type FileInfo } from './api'
 import { fileKind } from './format'
 
@@ -116,5 +116,20 @@ export function useUploads(files: FileInfo[] | null) {
     setUploads((list) => list.filter((u) => u.key !== key))
   }, [])
 
-  return { uploads, thumbs, add, retry, dismiss }
+  // Between the server listing a file and the effect above handing it over, show the file tile
+  // only, already using the local preview, so there's no duplicate tile and no re-download
+  const fileIds = useMemo(() => new Set(files?.map((f) => f.id)), [files])
+  const visibleUploads = useMemo(
+    () => uploads.filter((u) => !(u.fileId && fileIds.has(u.fileId))),
+    [uploads, fileIds],
+  )
+  const allThumbs = useMemo(() => {
+    const merged = { ...thumbs }
+    for (const u of uploads) {
+      if (u.fileId && u.previewUrl && !merged[u.fileId]) merged[u.fileId] = u.previewUrl
+    }
+    return merged
+  }, [thumbs, uploads])
+
+  return { uploads: visibleUploads, thumbs: allThumbs, add, retry, dismiss }
 }

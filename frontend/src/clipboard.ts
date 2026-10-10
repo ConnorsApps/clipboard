@@ -60,13 +60,20 @@ export async function copyImage(blob: Blob | Promise<Blob>): Promise<void> {
   await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })])
 }
 
+// textWinsOverImage decides what a paste means when the clipboard holds both text and an image.
+// Apps like Word add a picture of the copied text, so real text wins; but copying an image from a
+// web page can carry the image's URL as text, and then the image is what was meant.
+export function textWinsOverImage(text: string): boolean {
+  return !/^\s*[a-z][\w+.-]*:\/\/\S+\s*$/i.test(text)
+}
+
 export interface ClipboardContents {
   text: string | null
   files: File[]
 }
 
-// readClipboard reads the system clipboard for the Paste button. Plain text wins over images
-// within an item: apps like Word also put a picture of the copied text on the clipboard.
+// readClipboard reads the system clipboard for the Paste button, applying textWinsOverImage
+// when an item has both
 export async function readClipboard(): Promise<ClipboardContents> {
   if (typeof navigator.clipboard?.read === 'function') {
     const items = await navigator.clipboard.read()
@@ -74,11 +81,12 @@ export async function readClipboard(): Promise<ClipboardContents> {
     let text: string | null = null
     for (const item of items) {
       const imageType = item.types.find((type) => type.startsWith('image/'))
-      if (item.types.includes('text/plain')) {
-        text = await (await item.getType('text/plain')).text()
-      } else if (imageType) {
+      const itemText = item.types.includes('text/plain') ? await (await item.getType('text/plain')).text() : null
+      if (imageType && (itemText === null || !textWinsOverImage(itemText))) {
         const blob = await item.getType(imageType)
         files.push(new File([blob], generatedFileName(imageType), { type: imageType }))
+      } else if (itemText !== null) {
+        text = itemText
       }
     }
     return { text, files }

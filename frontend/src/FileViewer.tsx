@@ -1,13 +1,14 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { deleteFile, fetchFileBlob, fileUrl, type FileInfo } from './api'
 import { canCopyImages, copyImage } from './clipboard'
 import { extension, fileKind, formatRelative, formatSize } from './format'
 import { CloseIcon, CopyIcon, DownloadIcon, FileIcon, ShareIcon, TrashIcon } from './icons'
 import type { ToastOptions } from './Toast'
 
-// Files up to this size are fetched up front so Copy and Share can run inside the tap itself,
-// which iOS Safari requires
-const MAX_PREFETCH_BYTES = 50 * 1024 * 1024
+// iOS Safari only allows Copy and Share inside the tap itself, so the file has to be in memory
+// first. Images are loaded on open (the grid has usually cached them already); other files load
+// on the first tap of Share, and a second tap shares.
+const MAX_SHARE_BYTES = 50 * 1024 * 1024
 const MAX_TEXT_PREVIEW_BYTES = 1024 * 1024
 
 const isTouch = window.matchMedia('(pointer: coarse)').matches
@@ -28,29 +29,51 @@ function FileViewer({ file, thumb, onClose, onDeleted, showToast }: FileViewerPr
       navigator.canShare({ files: [new File([''], file.name, { type: file.type || 'application/octet-stream' })] }),
   )
   const canCopy = kind === 'image' && canCopyImages()
-  const prefetch = file.size <= MAX_PREFETCH_BYTES && (canCopy || canShare || kind === 'text')
+  const shareable = canShare && file.size <= MAX_SHARE_BYTES
+  const loadOnOpen =
+    (kind === 'image' && (canCopy || shareable)) || (kind === 'text' && file.size <= MAX_TEXT_PREVIEW_BYTES)
 
   const [blob, setBlob] = useState<Blob | null>(null)
+  const [loading, setLoading] = useState(false)
   const [text, setText] = useState<string | null>(null)
   const [previewFailed, setPreviewFailed] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const blobPromise = useRef<Promise<Blob> | null>(null)
+  const abortLoad = useRef<AbortController | null>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
 
+  const loadBlob = useCallback((): Promise<Blob> => {
+    if (!blobPromise.current) {
+      const controller = new AbortController()
+      abortLoad.current = controller
+      setLoading(true)
+      // A just-uploaded file is still in memory under its preview URL
+      const promise = thumb
+        ? fetch(thumb, { signal: controller.signal }).then((r) => r.blob())
+        : fetchFileBlob(file.id, controller.signal)
+      blobPromise.current = promise
+      promise
+        .then(setBlob)
+        .catch(() => {
+          blobPromise.current = null
+        })
+        .finally(() => setLoading(false))
+    }
+    return blobPromise.current
+  }, [file.id, thumb])
+
   useEffect(() => {
-    if (!prefetch) return
-    const controller = new AbortController()
-    const promise = fetchFileBlob(file.id, controller.signal)
-    blobPromise.current = promise
-    promise
-      .then(async (b) => {
-        setBlob(b)
-        if (kind === 'text' && b.size <= MAX_TEXT_PREVIEW_BYTES) setText(await b.text())
-      })
-      .catch(() => {})
-    return () => controller.abort()
-  }, [file.id, kind, prefetch])
+    if (loadOnOpen) loadBlob()
+  }, [loadOnOpen, loadBlob])
+
+  useEffect(() => () => abortLoad.current?.abort(), [])
+
+  useEffect(() => {
+    if (kind === 'text' && blob && blob.size <= MAX_TEXT_PREVIEW_BYTES) {
+      blob.text().then(setText, () => {})
+    }
+  }, [kind, blob])
 
   // Esc closes; lock page scroll underneath while open
   useEffect(() => {
@@ -75,7 +98,7 @@ function FileViewer({ file, thumb, onClose, onDeleted, showToast }: FileViewerPr
 
   const handleCopy = async () => {
     try {
-      await copyImage(blob ?? blobPromise.current ?? fetchFileBlob(file.id))
+      await copyImage(blob ?? loadBlob())
       showToast('Image copied')
     } catch {
       showToast(`Couldn't copy the image. ${isTouch ? 'Long-press' : 'Right-click'} it to copy instead.`, {
@@ -85,7 +108,10 @@ function FileViewer({ file, thumb, onClose, onDeleted, showToast }: FileViewerPr
   }
 
   const handleShare = async () => {
-    if (!blob) return
+    if (!blob) {
+      loadBlob().catch(() => showToast("Couldn't load the file to share", { tone: 'error' }))
+      return
+    }
     try {
       await navigator.share({ files: [new File([blob], file.name, { type: blob.type || file.type })] })
     } catch (err) {
@@ -189,10 +215,10 @@ function FileViewer({ file, thumb, onClose, onDeleted, showToast }: FileViewerPr
             Copy
           </button>
         )}
-        {canShare && prefetch && (
-          <button onClick={handleShare} disabled={!blob} className={`${actionClass} bg-white/10 hover:bg-white/20`}>
+        {shareable && (
+          <button onClick={handleShare} disabled={loading} className={`${actionClass} bg-white/10 hover:bg-white/20`}>
             <ShareIcon />
-            {blob ? 'Share' : 'Loading…'}
+            {loading ? 'Preparing…' : 'Share'}
           </button>
         )}
         <a href={fileUrl(file.id)} download={file.name} className={`${actionClass} bg-white/10 hover:bg-white/20`}>

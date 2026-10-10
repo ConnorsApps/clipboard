@@ -3,6 +3,10 @@ import { getToken, type FileInfo } from './api'
 
 export type ConnectionState = 'connecting' | 'connected' | 'offline'
 
+// After this long in the background a socket may look open but be dead: phones suspend the
+// page and the server drops it after missed pings, without the page ever seeing a close
+const STALE_AFTER_HIDDEN_MS = 20_000
+
 interface WSMessage {
   type: string
   content?: string
@@ -110,14 +114,29 @@ export function useSync(onAuthError: () => void) {
       connect()
     }
 
+    let hiddenAt = 0
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        hiddenAt = Date.now()
+        return
+      }
+      const ws = wsRef.current
+      if (ws && hiddenAt && Date.now() - hiddenAt > STALE_AFTER_HIDDEN_MS) {
+        // Don't trust it; replacing wsRef first makes its onclose a no-op
+        wsRef.current = null
+        ws.close()
+      }
+      reconnectNow()
+    }
+
     connect()
-    document.addEventListener('visibilitychange', reconnectNow)
+    document.addEventListener('visibilitychange', onVisibilityChange)
     window.addEventListener('online', reconnectNow)
 
     return () => {
       disposed = true
       window.clearTimeout(retryTimer)
-      document.removeEventListener('visibilitychange', reconnectNow)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
       window.removeEventListener('online', reconnectNow)
       wsRef.current?.close()
       wsRef.current = null

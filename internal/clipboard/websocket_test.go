@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -80,6 +81,7 @@ func TestConcurrentBroadcasts(t *testing.T) {
 
 	// Wait until both clients are registered before broadcasting
 	s := m.GetOrCreate("u")
+	deadline := time.Now().Add(5 * time.Second)
 	for {
 		s.clientsMu.RLock()
 		n := len(s.clients)
@@ -87,6 +89,10 @@ func TestConcurrentBroadcasts(t *testing.T) {
 		if n == 2 {
 			break
 		}
+		if time.Now().After(deadline) {
+			t.Fatalf("only %d clients registered", n)
+		}
+		time.Sleep(time.Millisecond)
 	}
 
 	var writers sync.WaitGroup

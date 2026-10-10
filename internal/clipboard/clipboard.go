@@ -134,16 +134,21 @@ func (s *Service) Send(conn *websocket.Conn, msg WSMessage) error {
 
 // Broadcast sends a message to all connected clients except the excluded one
 func (s *Service) Broadcast(msg WSMessage, exclude *websocket.Conn) {
+	// Snapshot the clients so a slow write doesn't hold clientsMu and stall (un)registration
 	s.clientsMu.RLock()
-	defer s.clientsMu.RUnlock()
-
+	targets := make(map[*websocket.Conn]*sync.Mutex, len(s.clients))
 	for client, writeMu := range s.clients {
-		if client == exclude {
-			continue
+		if client != exclude {
+			targets[client] = writeMu
 		}
+	}
+	s.clientsMu.RUnlock()
+
+	for client, writeMu := range targets {
 		if err := writeJSON(client, writeMu, msg); err != nil {
-			// Log error but continue broadcasting to other clients
-			continue
+			// A failed or timed-out write leaves the connection unusable. Closing it ends
+			// its read loop, which unregisters it; keep broadcasting to everyone else.
+			client.Close()
 		}
 	}
 }

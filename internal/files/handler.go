@@ -201,7 +201,10 @@ func (s *Service) readMeta(fileID string, sizeOnDisk int64) fileMeta {
 			if info.MetaData.Filename != "" {
 				meta.name = info.MetaData.Filename
 			}
-			meta.mimeType = info.MetaData.Filetype
+			// filetype comes from the client, so only trust it if it parses
+			if _, _, err := mime.ParseMediaType(info.MetaData.Filetype); err == nil {
+				meta.mimeType = info.MetaData.Filetype
+			}
 			// tusd creates the binary file empty and appends chunks, so an upload
 			// is finished once the bytes on disk reach the declared size
 			meta.complete = !info.SizeIsDeferred && sizeOnDisk >= info.Size
@@ -331,6 +334,11 @@ func (s *Service) HandleFile(w http.ResponseWriter, r *http.Request) {
 		// Stored files have no extension, so set the type explicitly rather than relying on sniffing
 		w.Header().Set("Content-Type", meta.mimeType)
 		w.Header().Set("X-Content-Type-Options", "nosniff")
+		if meta.complete {
+			// Upload IDs are never reused, so a finished file's bytes never change. Letting the
+			// browser keep it stops thumbnails from re-downloading on every visit.
+			w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
+		}
 		http.ServeFile(w, r, filePath)
 
 	case http.MethodDelete:

@@ -79,4 +79,33 @@ func TestHandleFileSetsType(t *testing.T) {
 	if cd := rec.Header().Get("Content-Disposition"); cd != `attachment; filename="photo.heic"; filename*=UTF-8''photo.heic` {
 		t.Errorf("Content-Disposition = %q", cd)
 	}
+	if cc := rec.Header().Get("Cache-Control"); cc != "private, max-age=31536000, immutable" {
+		t.Errorf("Cache-Control = %q, want finished files cached", cc)
+	}
+}
+
+func TestHandleFileIgnoresBadType(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "abc"), []byte("data"), time.Now())
+	writeFile(t, filepath.Join(dir, "abc.info"), []byte(`{"Size":4,"MetaData":{"filename":"a.png","filetype":"not a type"}}`), time.Now())
+
+	rec := httptest.NewRecorder()
+	New(dir, nil).HandleFile(rec, httptest.NewRequest(http.MethodGet, "/api/files/abc", nil))
+
+	if ct := rec.Header().Get("Content-Type"); ct != "image/png" {
+		t.Errorf("Content-Type = %q, want image/png from the extension", ct)
+	}
+}
+
+func TestHandleFileDoesNotCachePartialUpload(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "abc"), []byte("da"), time.Now())
+	writeFile(t, filepath.Join(dir, "abc.info"), []byte(`{"Size":4,"MetaData":{"filename":"a.png"}}`), time.Now())
+
+	rec := httptest.NewRecorder()
+	New(dir, nil).HandleFile(rec, httptest.NewRequest(http.MethodGet, "/api/files/abc", nil))
+
+	if cc := rec.Header().Get("Cache-Control"); cc != "" {
+		t.Errorf("Cache-Control = %q, want none for an unfinished upload", cc)
+	}
 }
