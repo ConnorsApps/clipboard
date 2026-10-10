@@ -21,7 +21,7 @@ var upgrader = websocket.Upgrader{
 
 // HandleWebSocket creates a WebSocket handler function that routes to the clipboard service for the authenticated user.
 // Store errors return 503 so the client can retry without clearing the token.
-// filesForUser, if set, supplies the file list sent to each client right after it connects.
+// filesForUser, if set, supplies the file list sent on connect.
 func (m *Manager) HandleWebSocket(getUserID func(string) (string, bool, error), filesForUser func(userID string) interface{}) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)

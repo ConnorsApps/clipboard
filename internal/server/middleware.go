@@ -42,8 +42,7 @@ func withCORS(handler http.HandlerFunc) http.HandlerFunc {
 // Store errors (e.g. MongoDB timeout) return 503 so the client can retry without clearing the token.
 func withAuth(handler http.HandlerFunc, getUserID func(string) (string, bool, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Skip auth for CORS preflight requests, which carry no credentials. HEAD is
-		// authenticated like GET: tus clients use it to resume interrupted uploads.
+		// Preflights carry no credentials. HEAD needs auth: tus resumes with it.
 		if r.Method == http.MethodOptions {
 			handler(w, r)
 			return

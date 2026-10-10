@@ -39,8 +39,7 @@ export function formatRelative(dateString: string): string {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
-// Browsers name pasted images "image.png" (and iOS names camera shots "image.jpg");
-// give them something you can tell apart later
+// Replaces generic names like "image.png" from pastes and iOS camera shots
 export function generatedFileName(type: string, prefix = 'paste', date = new Date()): string {
   const pad = (n: number) => String(n).padStart(2, '0')
   const stamp =

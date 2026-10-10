@@ -26,7 +26,7 @@ export function useToast() {
 interface ToastProps {
   toast: ToastState | null
   onDismiss: () => void
-  // above-dock: clear of the phone's add bar; top: clear of the file viewer's action buttons
+  // above-dock: clears the phone's add bar; top: clears the viewer's buttons
   placement: 'bottom' | 'above-dock' | 'top'
 }
 

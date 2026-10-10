@@ -6,12 +6,12 @@ export type PickerKind = 'photos' | 'camera' | 'files'
 interface AddBarProps {
   onPaste: () => void
   onPick: (kind: PickerKind) => void
-  // dock: fixed thumb-reach bar on phones; inline: a row above the grid on larger screens
+  // dock: fixed bottom bar on phones; inline: above the grid on larger screens
   variant: 'dock' | 'inline'
   hidden?: boolean
 }
 
-// Camera capture only makes sense on phones and tablets
+// Phones and tablets only
 const hasCamera = window.matchMedia('(pointer: coarse)').matches
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform)
 

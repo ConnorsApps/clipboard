@@ -7,7 +7,7 @@ const MAX_PARALLEL = 3
 export interface PendingUpload {
   key: string
   file: File
-  // Local object URL so images show instantly, before the server has them
+  // Object URL, so images show before the server has them
   previewUrl?: string
   progress: number
   status: 'queued' | 'uploading' | 'error' | 'done'
@@ -17,22 +17,20 @@ export interface PendingUpload {
 
 let nextKey = 0
 
-// useUploads queues files for upload and tracks their progress. A finished upload stays in the
-// list until the server's file list includes it, then its local preview becomes the thumbnail.
+// Upload queue. A finished upload stays until the server lists it; its preview becomes the thumbnail.
 export function useUploads(files: FileInfo[] | null) {
   const [uploads, setUploads] = useState<PendingUpload[]>([])
   const [thumbs, setThumbs] = useState<Record<string, string>>({})
-  // Uploads that have been created; kept after an error so Retry resumes instead of restarting
+  // Kept after an error so Retry resumes
   const handles = useRef(new Map<string, UploadHandle>())
-  // Uploads currently transferring. Tracked here rather than read from state, so a render that
-  // hasn't caught up with a status change can never start the same upload twice.
+  // In flight. A ref, not state, so a lagging render can't start an upload twice
   const active = useRef(new Set<string>())
 
   const patch = useCallback((key: string, changes: Partial<PendingUpload>) => {
     setUploads((list) => list.map((u) => (u.key === key ? { ...u, ...changes } : u)))
   }, [])
 
-  // Start queued uploads, oldest first, while under the parallel limit
+  // Start queued uploads, oldest first
   useEffect(() => {
     const slots = MAX_PARALLEL - active.current.size
     if (slots <= 0) return
@@ -63,7 +61,7 @@ export function useUploads(files: FileInfo[] | null) {
     }
   }, [uploads, patch])
 
-  // Hand finished uploads over to the server's file list
+  // Hand finished uploads over to the file list
   useEffect(() => {
     if (!files) return
     const ids = new Set(files.map((f) => f.id))
@@ -81,7 +79,7 @@ export function useUploads(files: FileInfo[] | null) {
     setUploads((list) => list.filter((u) => !keys.has(u.key)))
   }, [files, uploads])
 
-  // Release previews of files that have been deleted
+  // Free previews of deleted files
   useEffect(() => {
     if (!files) return
     const ids = new Set(files.map((f) => f.id))
@@ -95,7 +93,7 @@ export function useUploads(files: FileInfo[] | null) {
     })
   }, [files, thumbs])
 
-  // Stop uploads and free previews when leaving (e.g. logout)
+  // On logout: stop uploads, free previews
   const latest = useRef({ uploads, thumbs })
   useEffect(() => {
     latest.current = { uploads, thumbs }
@@ -122,7 +120,7 @@ export function useUploads(files: FileInfo[] | null) {
 
   const retry = useCallback((key: string) => patch(key, { status: 'queued', error: undefined }), [patch])
 
-  // Cancels an upload, or drops a failed one; either way the partial upload is deleted
+  // Cancel or drop; deletes the partial upload
   const dismiss = useCallback((key: string) => {
     handles.current.get(key)?.abort()
     handles.current.delete(key)
@@ -132,8 +130,7 @@ export function useUploads(files: FileInfo[] | null) {
     setUploads((list) => list.filter((u) => u.key !== key))
   }, [])
 
-  // Between the server listing a file and the effect above handing it over, show the file tile
-  // only, already using the local preview, so there's no duplicate tile and no re-download
+  // Until the hand-over runs: no duplicate tile, and reuse the local preview
   const fileIds = useMemo(() => new Set(files?.map((f) => f.id)), [files])
   const visibleUploads = useMemo(
     () => uploads.filter((u) => !(u.fileId && fileIds.has(u.fileId))),

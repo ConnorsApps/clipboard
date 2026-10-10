@@ -6,26 +6,21 @@ import (
 	"testing"
 )
 
+// tus resumes uploads with HEAD, so it must be authenticated
 func TestWithAuthHead(t *testing.T) {
-	getUserID := func(token string) (string, bool, error) {
-		return "user", token == "good", nil
-	}
-	var gotUser string
 	handler := withAuth(func(w http.ResponseWriter, r *http.Request) {
-		gotUser, _ = UserIDFromContext(r.Context())
-	}, getUserID)
+		if _, ok := UserIDFromContext(r.Context()); !ok {
+			t.Error("user ID not set")
+		}
+	}, func(token string) (string, bool, error) { return "user", token == "good", nil })
 
-	req := httptest.NewRequest(http.MethodHead, "/api/uploads/abc", nil)
-	req.Header.Set("Authorization", "Bearer good")
-	rec := httptest.NewRecorder()
-	handler(rec, req)
-	if rec.Code != http.StatusOK || gotUser != "user" {
-		t.Errorf("authorized HEAD: status %d, user %q; want 200 and user injected", rec.Code, gotUser)
-	}
-
-	rec = httptest.NewRecorder()
-	handler(rec, httptest.NewRequest(http.MethodHead, "/api/uploads/abc", nil))
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("unauthenticated HEAD: status %d, want 401", rec.Code)
+	for token, want := range map[string]int{"good": http.StatusOK, "": http.StatusUnauthorized} {
+		req := httptest.NewRequest(http.MethodHead, "/api/uploads/x", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		handler(rec, req)
+		if rec.Code != want {
+			t.Errorf("token %q: status %d, want %d", token, rec.Code, want)
+		}
 	}
 }

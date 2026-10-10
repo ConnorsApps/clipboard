@@ -68,12 +68,12 @@ function Home({ onLogout }: { onLogout: () => void }) {
   }
 
   const replaceText = (text: string, message: string) => {
-    // Before the first sync, this would overwrite whatever the server has
+    // Would overwrite the server's text before the first sync
     if (!synced) {
       showToast('Still connecting — try again in a moment', { tone: 'error' })
       return
     }
-    // Read now, not from this render: the Paste button awaits the clipboard first
+    // Not from this render: Paste awaits the clipboard first
     const previous = getContent()
     updateContent(text)
     showToast(message, previous ? { action: { label: 'Undo', onClick: () => updateContent(previous) } } : {})
@@ -105,8 +105,7 @@ function Home({ onLogout }: { onLogout: () => void }) {
     e.target.value = ''
   }
 
-  // Ctrl/Cmd+V anywhere: images are uploaded; text outside the text box replaces the shared text.
-  // When both are present, textWinsOverImage decides.
+  // Ctrl/Cmd+V anywhere: images upload; text outside the text box replaces the shared text
   const onDocumentPaste = useEffectEvent((e: ClipboardEvent) => {
     const data = e.clipboardData
     if (!data) return
@@ -134,8 +133,7 @@ function Home({ onLogout }: { onLogout: () => void }) {
 
   useEffect(() => {
     let depth = 0
-    // Dragging an image that's already on the page (e.g. out of the viewer to save it) also
-    // reports 'Files'; ignore drags that start here so they don't upload a duplicate
+    // Ignore drags starting on the page (e.g. the viewer's image) so they don't re-upload
     let internalDrag = false
     const onStart = () => {
       internalDrag = true
@@ -183,7 +181,7 @@ function Home({ onLogout }: { onLogout: () => void }) {
     }
   }, [])
 
-  // The viewer gets a history entry so the phone's Back gesture closes it instead of leaving
+  // History entry so Back closes the viewer instead of leaving
   const openViewer = useCallback((file: FileInfo) => {
     window.history.pushState({ viewer: true }, '')
     historyPushed.current = true
@@ -206,7 +204,7 @@ function Home({ onLogout }: { onLogout: () => void }) {
     window.addEventListener('popstate', onPop)
     return () => {
       window.removeEventListener('popstate', onPop)
-      // Logged out with the viewer open: don't leave its entry behind
+      // Logged out with the viewer open
       if (historyPushed.current) window.history.back()
     }
   }, [])

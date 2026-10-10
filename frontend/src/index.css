@@ -17,7 +17,7 @@ body {
 
 body {
   min-height: 100dvh;
-  /* Keep content clear of the notch in landscape; top/bottom are handled by the header and dock */
+  /* Clear the notch in landscape; header and dock handle top/bottom */
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
   overscroll-behavior-y: none;
@@ -28,8 +28,7 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Buttons shouldn't pop the iOS long-press menu or double-tap zoom. Everything else keeps
-   native long-press so text fields can Paste and images can be saved to Photos. */
+/* No iOS long-press menu or double-tap zoom on buttons; elsewhere keep it (Paste, Save to Photos) */
 button,
 a {
   touch-action: manipulation;

@@ -3,11 +3,8 @@ import { getToken, type FileInfo } from './api'
 
 export type ConnectionState = 'connecting' | 'connected' | 'offline'
 
-// After this long in the background a socket may look open but be dead: phones suspend the
-// page and the server drops it after missed pings, without the page ever seeing a close
+// Sockets can die silently: when a phone suspends the page, or on a network switch
 const STALE_AFTER_HIDDEN_MS = 20_000
-// While visible, check the connection is alive; a socket can also die silently in the
-// foreground, e.g. when a phone switches from Wi-Fi to cellular
 const HEARTBEAT_MS = 25_000
 const PONG_TIMEOUT_MS = 10_000
 const MAX_REMEMBERED_SENDS = 5000
@@ -31,31 +28,27 @@ function hashText(text: string): number {
 
 interface SyncOptions {
   onAuthError: () => void
-  // Called when edits made offline replaced newer text from another device; restore puts
-  // that text back
+  // Offline edits overwrote another device's newer text; restore() puts it back
   onConflict: (restore: () => void) => void
 }
 
-// useSync keeps one WebSocket open for both the shared text and the file list.
-// files is null until the server has sent the first list; synced is false until the
-// shared text has been received once.
+// One WebSocket for the shared text and file list. files is null and synced false until received.
 export function useSync({ onAuthError, onConflict }: SyncOptions) {
   const [content, setContent] = useState('')
   const [files, setFiles] = useState<FileInfo[] | null>(null)
   const [connection, setConnection] = useState<ConnectionState>('connecting')
   const [synced, setSynced] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
-  // The current socket has delivered the server's copy, so edits can be sent on it
+  // Current socket has delivered the server's copy
   const socketSyncedRef = useRef(false)
   const contentRef = useRef('')
-  // Last text received from the server (null until the first sync)
+  // Last text from the server; null before the first sync
   const serverTextRef = useRef<string | null>(null)
-  // Hashes of texts sent since then. After a reconnect, a server copy that is one of these (or
-  // the last received text) means nobody else changed it, so any difference is our edits that
-  // never arrived and they should be sent again.
+  // Hashes of texts sent since. If the server's copy after a reconnect is one of these, nobody
+  // else changed it, so a differing local text is edits that never arrived.
   const sentHashesRef = useRef(new Set<number>())
   const lastSentHashRef = useRef<number | null>(null)
-  // Edited while the socket couldn't take updates
+  // Edited while updates couldn't be sent
   const dirtyRef = useRef(false)
   const callbacksRef = useRef({ onAuthError, onConflict })
 
@@ -77,8 +70,7 @@ export function useSync({ onAuthError, onConflict }: SyncOptions) {
       contentRef.current = next
       setContent(next)
       const ws = wsRef.current
-      // Until this socket has delivered the server's copy, an update could be overwritten by
-      // that copy arriving after it; hold it and push it once synced instead
+      // Before the server's copy arrives it would overwrite this; push on sync instead
       if (ws && ws.readyState === WebSocket.OPEN && socketSyncedRef.current) {
         sendUpdate(ws, next)
       } else {
@@ -110,7 +102,7 @@ export function useSync({ onAuthError, onConflict }: SyncOptions) {
       socketSyncedRef.current = false
       setConnection('connecting')
       let receivedInitialContent = false
-      // Version of the newest content seen on this socket
+      // Newest content version seen on this socket
       let version = 0
       let heartbeat: number | undefined
       let pongTimer: number | undefined
@@ -133,7 +125,7 @@ export function useSync({ onAuthError, onConflict }: SyncOptions) {
       }
 
       ws.onmessage = (event) => {
-        // Any message proves the connection is alive
+        // Any message proves liveness
         window.clearTimeout(pongTimer)
         pongTimer = undefined
 
@@ -152,7 +144,7 @@ export function useSync({ onAuthError, onConflict }: SyncOptions) {
           }
 
           if (receivedInitialContent) {
-            // Versions only grow, so an older one arrived out of order and is already superseded
+            // Out of order, already superseded
             if (msg.version !== undefined) {
               if (msg.version <= version) return
               version = msg.version
@@ -160,8 +152,8 @@ export function useSync({ onAuthError, onConflict }: SyncOptions) {
             serverTextRef.current = incoming
             const hash = hashText(incoming)
             if (sentHashesRef.current.has(hash)) {
-              // The server echoing our own edit. Older echoes are skipped so typing isn't rolled
-              // back; the latest is applied in case another device's text was shown before it
+              // Own echo: skip older ones so typing isn't rolled back; apply the latest in case
+              // another device's text was shown in between
               if (hash === lastSentHashRef.current && contentRef.current !== incoming) show(incoming)
               return
             }
@@ -170,11 +162,10 @@ export function useSync({ onAuthError, onConflict }: SyncOptions) {
             return
           }
 
-          // The server's copy, sent right after connecting
+          // Initial copy, sent on connect
           receivedInitialContent = true
           version = msg.version ?? 0
-          // Only now is the server really serving us; it can accept and then close
-          // (e.g. token store down), and the backoff must keep growing in that case
+          // Reset backoff only now: the server may accept, then close (token store down)
           attempt = 0
           socketSyncedRef.current = true
           setConnection('connected')
@@ -186,7 +177,7 @@ export function useSync({ onAuthError, onConflict }: SyncOptions) {
           serverTextRef.current = incoming
           sentHashesRef.current.clear()
           if (known !== null && local !== incoming && (dirtyRef.current || serverHasOurs)) {
-            // Our edits never made it; push them (last writer wins)
+            // Our edits never arrived; push them (last writer wins)
             dirtyRef.current = false
             sendUpdate(ws, local)
             if (!serverHasOurs) callbacksRef.current.onConflict(() => updateContent(incoming))
@@ -206,7 +197,7 @@ export function useSync({ onAuthError, onConflict }: SyncOptions) {
 
       ws.onclose = (event) => {
         stop()
-        // Ignore sockets that have already been replaced by a newer connection
+        // Already replaced by a newer socket
         if (disposed || wsRef.current !== ws) return
         wsRef.current = null
         socketSyncedRef.current = false
@@ -226,8 +217,7 @@ export function useSync({ onAuthError, onConflict }: SyncOptions) {
       }
     }
 
-    // Drop a socket we no longer trust and start a fresh one. Clearing wsRef first turns
-    // its onclose into a no-op.
+    // Clearing wsRef first makes the old socket's onclose a no-op
     const replaceSocket = (ws: WebSocket) => {
       if (disposed || wsRef.current !== ws) return
       stopSocket?.()
@@ -238,8 +228,7 @@ export function useSync({ onAuthError, onConflict }: SyncOptions) {
       connect()
     }
 
-    // Phones drop sockets while the app is in the background; reconnect right away
-    // when it comes back instead of waiting out the backoff
+    // Skip the backoff when the page comes back or goes online
     const reconnectNow = () => {
       if (document.visibilityState !== 'visible') return
       const ws = wsRef.current

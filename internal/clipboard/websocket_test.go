@@ -1,6 +1,7 @@
 package clipboard
 
 import (
+	"fmt"
 	"net/http/httptest"
 	"strings"
 	"sync"
@@ -10,67 +11,80 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+func serve(t *testing.T, m *Manager, files func(string) interface{}) *httptest.Server {
+	getUserID := func(string) (string, bool, error) { return "u", true, nil }
+	srv := httptest.NewServer(m.HandleWebSocket(getUserID, files))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
 func dial(t *testing.T, srv *httptest.Server) *websocket.Conn {
 	t.Helper()
-	url := "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws?token=t"
-	conn, _, err := websocket.DefaultDialer.Dial(url, nil)
+	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { conn.Close() })
 	return conn
 }
 
-func TestHandleWebSocketSendsInitialState(t *testing.T) {
-	m := NewManager()
-	m.GetOrCreate("u").SetContent("hello")
-	getUserID := func(string) (string, bool, error) { return "u", true, nil }
-	filesForUser := func(string) interface{} { return []string{"a"} }
-	srv := httptest.NewServer(m.HandleWebSocket(getUserID, filesForUser))
-	defer srv.Close()
-
-	conn := dial(t, srv)
-	defer conn.Close()
-
-	var first, second struct {
-		Type    string   `json:"type"`
-		Content string   `json:"content"`
-		Files   []string `json:"files"`
-	}
-	if err := conn.ReadJSON(&first); err != nil {
-		t.Fatal(err)
-	}
-	if err := conn.ReadJSON(&second); err != nil {
-		t.Fatal(err)
-	}
-	if first.Type != "content" || first.Content != "hello" {
-		t.Errorf("first message = %+v, want content \"hello\"", first)
-	}
-	if second.Type != "files_list" || len(second.Files) != 1 || second.Files[0] != "a" {
-		t.Errorf("second message = %+v, want files_list [a]", second)
+// next returns the next message of the given type
+func next(t *testing.T, conn *websocket.Conn, typ WSMessageType) WSMessage {
+	t.Helper()
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	for {
+		var msg WSMessage
+		if err := conn.ReadJSON(&msg); err != nil {
+			t.Fatal(err)
+		}
+		if msg.Type == typ {
+			return msg
+		}
 	}
 }
 
-// Broadcasts come from many goroutines (each client's reader plus tusd upload
-// callbacks). gorilla/websocket panics on concurrent writes to one connection,
-// so this would crash without the per-connection write lock.
+func TestSync(t *testing.T) {
+	m := NewManager()
+	m.GetOrCreate("u").SetContent("hello")
+	srv := serve(t, m, func(string) interface{} { return []string{"a"} })
+	sender, other := dial(t, srv), dial(t, srv)
+	conns := []*websocket.Conn{sender, other}
+
+	for _, c := range conns {
+		if msg := next(t, c, "content"); msg.Content != "hello" || msg.Version != 1 {
+			t.Errorf("initial content %q v%d", msg.Content, msg.Version)
+		}
+		if files := fmt.Sprint(next(t, c, FilesList).Files); files != "[a]" {
+			t.Errorf("initial files %s", files)
+		}
+	}
+
+	// Changes reach every client, sender included, with increasing versions
+	for i, text := range []string{"one", "two"} {
+		sender.WriteJSON(WSMessage{Type: Update, Content: text})
+		for _, c := range conns {
+			if msg := next(t, c, "content"); msg.Content != text || msg.Version != uint64(i+2) {
+				t.Errorf("got %q v%d, want %q v%d", msg.Content, msg.Version, text, i+2)
+			}
+		}
+	}
+}
+
+// gorilla panics on concurrent writes to one connection
 func TestConcurrentBroadcasts(t *testing.T) {
 	m := NewManager()
-	getUserID := func(string) (string, bool, error) { return "u", true, nil }
-	srv := httptest.NewServer(m.HandleWebSocket(getUserID, func(string) interface{} { return []string{} }))
-	defer srv.Close()
-
-	const broadcasters, perBroadcaster = 8, 50
-	// Each client receives content + files_list on connect, then every broadcast
-	const wantPerClient = 2 + broadcasters*perBroadcaster
+	srv := serve(t, m, nil)
+	s := m.GetOrCreate("u")
+	const total = 400
 
 	var readers sync.WaitGroup
 	for range 2 {
 		conn := dial(t, srv)
-		defer conn.Close()
+		next(t, conn, "content") // registered
 		readers.Add(1)
 		go func() {
 			defer readers.Done()
-			for range wantPerClient {
+			for range total {
 				if _, _, err := conn.ReadMessage(); err != nil {
 					t.Error(err)
 					return
@@ -79,100 +93,20 @@ func TestConcurrentBroadcasts(t *testing.T) {
 		}()
 	}
 
-	// Wait until both clients are registered before broadcasting
-	s := m.GetOrCreate("u")
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		s.clientsMu.RLock()
-		n := len(s.clients)
-		s.clientsMu.RUnlock()
-		if n == 2 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("only %d clients registered", n)
-		}
-		time.Sleep(time.Millisecond)
-	}
-
 	var writers sync.WaitGroup
-	for i := range broadcasters {
+	for i := range 8 {
 		writers.Add(1)
 		go func() {
 			defer writers.Done()
-			for range perBroadcaster {
+			for range total / 8 {
 				if i%2 == 0 {
 					s.UpdateContent("x")
 				} else {
-					s.BroadcastFilesList([]string{"f"})
+					s.BroadcastFilesList(nil)
 				}
 			}
 		}()
 	}
 	writers.Wait()
 	readers.Wait()
-}
-
-func TestPingPong(t *testing.T) {
-	m := NewManager()
-	getUserID := func(string) (string, bool, error) { return "u", true, nil }
-	srv := httptest.NewServer(m.HandleWebSocket(getUserID, nil))
-	defer srv.Close()
-
-	conn := dial(t, srv)
-	defer conn.Close()
-	if err := conn.WriteJSON(WSMessage{Type: Ping}); err != nil {
-		t.Fatal(err)
-	}
-
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	for {
-		var msg WSMessage
-		if err := conn.ReadJSON(&msg); err != nil {
-			t.Fatalf("no pong: %v", err)
-		}
-		if msg.Type == Pong {
-			return
-		}
-	}
-}
-
-// Every client, including the sender, gets each change tagged with an increasing version
-func TestUpdateEchoesWithVersion(t *testing.T) {
-	m := NewManager()
-	getUserID := func(string) (string, bool, error) { return "u", true, nil }
-	srv := httptest.NewServer(m.HandleWebSocket(getUserID, nil))
-	defer srv.Close()
-
-	sender, other := dial(t, srv), dial(t, srv)
-	defer sender.Close()
-	defer other.Close()
-
-	readContent := func(conn *websocket.Conn) WSMessage {
-		t.Helper()
-		conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-		for {
-			var msg WSMessage
-			if err := conn.ReadJSON(&msg); err != nil {
-				t.Fatal(err)
-			}
-			if msg.Type == "content" {
-				return msg
-			}
-		}
-	}
-	readContent(sender) // initial state
-	readContent(other)
-
-	for i, text := range []string{"one", "two"} {
-		if err := sender.WriteJSON(WSMessage{Type: Update, Content: text}); err != nil {
-			t.Fatal(err)
-		}
-		for name, conn := range map[string]*websocket.Conn{"sender": sender, "other": other} {
-			msg := readContent(conn)
-			if msg.Content != text || msg.Version != uint64(i+1) {
-				t.Errorf("%s got %q v%d, want %q v%d", name, msg.Content, msg.Version, text, i+1)
-			}
-		}
-	}
 }

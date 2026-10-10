@@ -32,8 +32,7 @@ export async function login(password: string): Promise<string> {
   return data.token
 }
 
-// authFetch retries once on 401/503 and network errors: the token store (MongoDB) can be
-// briefly unavailable, and a new token may not be visible to every replica yet
+// Retries once on 401/503/network errors: the token store can lag or blip
 async function authFetch(path: string, init: RequestInit = {}, attempts = 2): Promise<Response> {
   for (let attempt = 1; ; attempt++) {
     try {
@@ -58,14 +57,13 @@ async function authFetch(path: string, init: RequestInit = {}, attempts = 2): Pr
   }
 }
 
-// fileUrl is used for <img>/<video> sources and download links, which can't send an
-// Authorization header, so the token rides in the query string
+// For <img>, <video> and download links, which can't send an Authorization header
 export function fileUrl(id: string): string {
   return `/api/files/${encodeURIComponent(id)}?token=${encodeURIComponent(getToken() ?? '')}`
 }
 
 export async function fetchFileBlob(id: string, signal?: AbortSignal): Promise<Blob> {
-  // Same URL as the thumbnail so the browser cache can serve it
+  // Same URL as the thumbnail, so usually cached
   const response = await fetch(fileUrl(id), { signal })
   if (!response.ok) {
     throw new Error(`Download failed (${response.status})`)
@@ -87,13 +85,12 @@ export interface UploadCallbacks {
 }
 
 export interface UploadHandle {
-  // Starts the upload, or resumes it from where the server has it after an error
+  // Starts, or resumes after an error
   start: () => void
-  // Stops the upload and deletes what the server has received so far
+  // Stops and deletes the partial upload
   abort: () => void
 }
 
-// createUpload prepares a resumable tus upload of file
 export function createUpload(file: File, callbacks: UploadCallbacks): UploadHandle {
   const metadata: Record<string, string> = { filename: file.name }
   if (file.type) {
@@ -104,13 +101,12 @@ export function createUpload(file: File, callbacks: UploadCallbacks): UploadHand
     endpoint: '/api/uploads/',
     chunkSize: 5 * 1024 * 1024,
     retryDelays: [0, 1000, 3000, 5000, 10000],
-    // Resuming works through this Upload object (start() again after an error). Fingerprints
-    // in localStorage would make two copies of the same file share one server upload.
+    // Resume via start(); stored fingerprints would make duplicate files share one upload
     storeFingerprintForResuming: false,
     metadata,
     headers: { Authorization: `Bearer ${getToken()}` },
     onProgress: (sent, total) => callbacks.onProgress(total ? sent / total : 0),
-    // tusd stores each upload under its upload ID, which is the last segment of the upload URL
+    // tusd names the file after the upload ID, the URL's last segment
     onSuccess: () => callbacks.onSuccess(upload.url?.split('/').pop() ?? ''),
     onError: callbacks.onError,
   })

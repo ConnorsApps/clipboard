@@ -21,8 +21,7 @@ import (
 type Service struct {
 	filesDir      string
 	broadcastFunc func([]FileInfo)
-	// broadcastMu serializes building and sending the list, so uploads finishing together
-	// can't deliver an older list after a newer one
+	// Serializes list broadcasts so an older list can't arrive after a newer one
 	broadcastMu sync.Mutex
 }
 
@@ -167,8 +166,7 @@ func cloneURL(u *url.URL) *url.URL {
 	return &u2
 }
 
-// extraTypes covers common phone media that Go's built-in MIME table lacks
-// (the Alpine runtime image ships no /etc/mime.types)
+// Common media missing from Go's built-in MIME table (Alpine has no /etc/mime.types)
 var extraTypes = map[string]string{
 	".heic": "image/heic",
 	".heif": "image/heif",
@@ -181,18 +179,15 @@ var extraTypes = map[string]string{
 	".txt":  "text/plain; charset=utf-8",
 }
 
-// fileMeta is what is known about a stored upload
 type fileMeta struct {
 	name     string
 	mimeType string
 	complete bool
 }
 
-// readMeta reads the original filename, MIME type and completion state of a stored upload.
-// Files without a usable .info file are named by their ID.
+// readMeta returns a stored upload's original name, MIME type and completion state.
 func (s *Service) readMeta(fileID string, stat os.FileInfo) fileMeta {
-	// tusd creates the empty data file just before writing its .info, so a fresh empty file
-	// without readable metadata is an upload being set up; anything else was put here directly
+	// Without readable .info, a fresh empty file is an upload tusd is still creating
 	settled := stat.Size() > 0 || time.Since(stat.ModTime()) > time.Minute
 	meta := fileMeta{name: fileID, complete: settled}
 
@@ -211,12 +206,11 @@ func (s *Service) readMeta(fileID string, stat os.FileInfo) fileMeta {
 			if info.MetaData.Filename != "" {
 				meta.name = info.MetaData.Filename
 			}
-			// filetype comes from the client, so only trust it if it parses
+			// Client-supplied; use only if valid
 			if _, _, err := mime.ParseMediaType(info.MetaData.Filetype); err == nil {
 				meta.mimeType = info.MetaData.Filetype
 			}
-			// tusd creates the binary file empty and appends chunks, so an upload
-			// is finished once the bytes on disk reach the declared size
+			// tusd appends chunks to an initially empty file
 			meta.complete = !info.SizeIsDeferred && stat.Size() >= info.Size
 		}
 	}
@@ -227,7 +221,7 @@ func (s *Service) readMeta(fileID string, stat os.FileInfo) fileMeta {
 	return meta
 }
 
-// detectType guesses a MIME type from the filename extension, falling back to content sniffing
+// detectType guesses a MIME type from the extension, then by sniffing
 func detectType(path, name string) string {
 	ext := strings.ToLower(filepath.Ext(name))
 	if t := mime.TypeByExtension(ext); t != "" {
@@ -343,12 +337,11 @@ func (s *Service) HandleFile(w http.ResponseWriter, r *http.Request) {
 			return r
 		}, originalName)
 		w.Header().Set("Content-Disposition", "attachment; filename=\""+asciiName+"\"; filename*=UTF-8''"+url.QueryEscape(originalName))
-		// Stored files have no extension, so set the type explicitly rather than relying on sniffing
+		// Stored files have no extension to infer it from
 		w.Header().Set("Content-Type", meta.mimeType)
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		if meta.complete {
-			// Upload IDs are never reused, so a finished file's bytes never change. Letting the
-			// browser keep it stops thumbnails from re-downloading on every visit.
+			// Upload IDs are never reused, so finished files never change
 			w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
 		}
 		http.ServeFile(w, r, filePath)

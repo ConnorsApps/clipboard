@@ -8,7 +8,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// writeWait bounds how long a single slow client can hold up a broadcast
+// writeWait bounds how long one slow client can hold up a broadcast
 const writeWait = 10 * time.Second
 
 // WSMessageType represents the type of WebSocket message
@@ -21,7 +21,7 @@ const (
 	Clear WSMessageType = "clear"
 	// FilesList indicates a files list update
 	FilesList WSMessageType = "files_list"
-	// Ping asks the server to answer with Pong, so clients can notice a dead connection
+	// Ping asks for a Pong, to detect dead connections
 	Ping WSMessageType = "ping"
 	// Pong answers a Ping
 	Pong WSMessageType = "pong"
@@ -31,8 +31,7 @@ const (
 type WSMessage struct {
 	Type    WSMessageType `json:"type"`
 	Content string        `json:"content,omitempty"`
-	// Version increases with every content change, so clients can drop content messages
-	// that arrive out of order
+	// Version increases with each change, so clients can drop stale messages
 	Version uint64      `json:"version,omitempty"`
 	Files   interface{} `json:"files,omitempty"`
 }
@@ -42,8 +41,7 @@ type Service struct {
 	content string
 	version uint64
 	mu      sync.RWMutex
-	// clients maps each connection to its write lock: gorilla/websocket supports only
-	// one concurrent writer, and broadcasts arrive from reader and tusd goroutines
+	// Each connection's write lock: gorilla allows one concurrent writer
 	clients   map[*websocket.Conn]*sync.Mutex
 	clientsMu sync.RWMutex
 }
@@ -108,9 +106,8 @@ func (s *Service) SetContent(content string) uint64 {
 	return s.version
 }
 
-// UpdateContent sets the content and sends it to every client, including the one that made
-// the change. Echoing to the sender and tagging the version means every client ends on the
-// server's final text even when two devices edit at once.
+// UpdateContent sets the content and sends it, versioned, to every client including the
+// sender, so concurrent edits converge.
 func (s *Service) UpdateContent(content string) {
 	version := s.SetContent(content)
 	s.Broadcast(WSMessage{Type: "content", Content: content, Version: version})
@@ -162,9 +159,8 @@ func (s *Service) Send(conn *websocket.Conn, msg WSMessage) error {
 	return writeJSON(conn, writeMu, msg)
 }
 
-// SendInitialState sends a newly registered client the current content and, if files is set,
-// the file list. The state is read while holding the connection's write lock, so a broadcast
-// racing with the connect is delivered after this snapshot instead of being overwritten by it.
+// SendInitialState sends a new client the content and file list, read under its write lock
+// so a racing broadcast lands after this snapshot, not before.
 func (s *Service) SendInitialState(conn *websocket.Conn, files func() interface{}) error {
 	writeMu, err := s.writeLock(conn)
 	if err != nil {
@@ -184,7 +180,7 @@ func (s *Service) SendInitialState(conn *websocket.Conn, files func() interface{
 
 // Broadcast sends a message to all connected clients
 func (s *Service) Broadcast(msg WSMessage) {
-	// Snapshot the clients so a slow write doesn't hold clientsMu and stall (un)registration
+	// Copy so slow writes don't hold clientsMu
 	s.clientsMu.RLock()
 	targets := make(map[*websocket.Conn]*sync.Mutex, len(s.clients))
 	for client, writeMu := range s.clients {
@@ -194,8 +190,7 @@ func (s *Service) Broadcast(msg WSMessage) {
 
 	for client, writeMu := range targets {
 		if err := writeJSON(client, writeMu, msg); err != nil {
-			// A failed or timed-out write leaves the connection unusable. Closing it ends
-			// its read loop, which unregisters it; keep broadcasting to everyone else.
+			// Unusable now; closing ends its read loop, which unregisters it
 			client.Close()
 		}
 	}

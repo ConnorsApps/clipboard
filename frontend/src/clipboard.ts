@@ -53,16 +53,13 @@ async function toPng(blob: Blob): Promise<Blob> {
   }
 }
 
-// copyImage must be called directly from a tap/click. Browsers only reliably accept PNG, and
-// handing ClipboardItem a promise lets Safari keep the user gesture while we convert.
+// Call directly from a tap. Only PNG is reliable; a promise keeps Safari's user gesture while converting.
 export async function copyImage(blob: Blob | Promise<Blob>): Promise<void> {
   const png = Promise.resolve(blob).then(toPng)
   await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })])
 }
 
-// textWinsOverImage decides what a paste means when the clipboard holds both text and an image.
-// Apps like Word add a picture of the copied text, so real text wins; but copying an image from a
-// web page can carry the image's URL as text, and then the image is what was meant.
+// Text + image: Word adds a picture of copied text (text wins); a copied web image carries its URL (image wins)
 export function textWinsOverImage(text: string): boolean {
   return !/^\s*[a-z][\w+.-]*:\/\/\S+\s*$/i.test(text)
 }
@@ -72,8 +69,6 @@ export interface ClipboardContents {
   files: File[]
 }
 
-// readClipboard reads the system clipboard for the Paste button, applying textWinsOverImage
-// when an item has both
 export async function readClipboard(): Promise<ClipboardContents> {
   if (typeof navigator.clipboard?.read === 'function') {
     const items = await navigator.clipboard.read()

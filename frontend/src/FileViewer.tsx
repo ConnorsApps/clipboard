@@ -5,9 +5,8 @@ import { extension, fileKind, formatRelative, formatSize } from './format'
 import { CloseIcon, CopyIcon, DownloadIcon, FileIcon, ShareIcon, TrashIcon } from './icons'
 import type { ToastOptions } from './Toast'
 
-// iOS Safari only allows Copy and Share inside the tap itself, so the file has to be in memory
-// first. Images are loaded on open (the grid has usually cached them already); other files load
-// on the first tap of Share, and a second tap shares.
+// iOS allows Copy/Share only within the tap, so the file must already be in memory. Images load
+// on open (usually cached); other files on the first Share tap, shared on the second.
 const MAX_SHARE_BYTES = 50 * 1024 * 1024
 const MAX_TEXT_PREVIEW_BYTES = 1024 * 1024
 
@@ -48,7 +47,7 @@ function FileViewer({ file, thumb, onClose, onDeleted, showToast }: FileViewerPr
       const controller = new AbortController()
       abortLoad.current = controller
       setLoading(true)
-      // A just-uploaded file is still in memory under its preview URL
+      // Just uploaded: still in memory
       const promise = thumb
         ? fetch(thumb, { signal: controller.signal }).then((r) => r.blob())
         : fetchFileBlob(file.id, controller.signal)

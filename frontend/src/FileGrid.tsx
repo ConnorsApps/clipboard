@@ -198,5 +198,5 @@ function UploadTile({
   )
 }
 
-// Memoized so typing in the text box doesn't re-render every tile
+// Memoized so typing doesn't re-render every tile
 export default memo(FileGrid)

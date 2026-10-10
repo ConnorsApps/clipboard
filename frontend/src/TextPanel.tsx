@@ -4,7 +4,7 @@ import { CheckIcon, CopyIcon, EraseIcon } from './icons'
 
 interface TextPanelProps {
   value: string
-  // Until the first sync, edits would be built on an empty box and overwrite the real text
+  // Until the first sync, edits would overwrite the real text
   readOnly: boolean
   onChange: (value: string) => void
   onClear: () => void
@@ -12,14 +12,14 @@ interface TextPanelProps {
   onError: (message: string) => void
 }
 
-// Don't pop the on-screen keyboard over everything when the page opens on a phone
+// Don't pop the keyboard on phones
 const autoFocus = window.matchMedia('(pointer: fine)').matches
 
 function TextPanel({ value, readOnly, onChange, onClear, onFocusChange, onError }: TextPanelProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [copied, setCopied] = useState(false)
 
-  // Grow with the content; CSS caps the height and scrolls beyond that
+  // Grow with content up to the CSS max height
   useLayoutEffect(() => {
     const textarea = textareaRef.current
     if (!textarea) return
