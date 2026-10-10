@@ -1,0 +1,66 @@
+name: Release Helm Chart
+
+# Bump `version` in charts/clipboard/Chart.yaml and merge to main to release
+# (existing versions are skipped). Index: https://connorsapps.github.io/clipboard
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "charts/**"
+      - ".github/workflows/release-charts.yml"
+  pull_request:
+    paths:
+      - "charts/**"
+      - "tests/**"
+      - "scripts/helm-test.sh"
+      - ".github/workflows/release-charts.yml"
+  workflow_dispatch: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v5
+      - run: ./scripts/helm-test.sh
+
+  release:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: release-charts
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: azure/setup-helm@v5
+
+      - name: Configure Git
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
+      # chart-releaser needs the gh-pages branch to exist.
+      - name: Create gh-pages if missing
+        run: |
+          git ls-remote --exit-code --heads origin gh-pages >/dev/null && exit 0
+          git checkout --orphan gh-pages
+          git rm -rf --quiet .
+          git commit --allow-empty -m "Initialize gh-pages"
+          git push origin gh-pages
+          git checkout --force "$GITHUB_REF_NAME"
+
+      - uses: helm/chart-releaser-action@v1.7.0
+        with:
+          charts_dir: charts
+          skip_existing: true
+        env:
+          CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"

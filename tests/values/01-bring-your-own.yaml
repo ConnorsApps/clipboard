@@ -1,0 +1,3 @@
+config: {passwords: ""}
+existingSecret: my-secret
+persistence: {existingClaim: my-pvc}

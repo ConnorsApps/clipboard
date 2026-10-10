@@ -1,0 +1,60 @@
+nameOverride: ""
+fullnameOverride: ""
+commonLabels: {}
+
+image:
+  repository: ghcr.io/connorsapps/clipboard
+  tag: latest
+  pullPolicy: Always  # only :latest is published
+imagePullSecrets: []
+
+config:
+  passwords: ""    # comma-separated, one per user; required unless existingSecret is set
+  mongodbUri: ""   # persists tokens across restarts; empty = in-memory
+  tokenExpiry: ""  # 10d, never, ...; empty = app default (30d)
+
+existingSecret: ""  # keys: CLIPBOARD_PASSWORDS, optional MONGODB_URI
+extraEnv: []
+
+service:
+  type: ClusterIP
+  port: 8080
+  annotations: {}
+
+# Needs the Gateway API CRDs. The Gateway's timeouts must allow long-lived
+# WebSockets (/ws) and large uploads.
+httpRoute:
+  enabled: false
+  annotations: {}
+  parentRef:
+    name: ""         # required when enabled
+    namespace: ""    # default: release namespace
+    sectionName: ""  # default: all listeners
+  hostnames: []
+
+# Uploaded files, mounted at /data.
+persistence:
+  enabled: true  # false = emptyDir
+  existingClaim: ""
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 10Gi
+  annotations: {}
+
+# Maps merge; drop a default with null (--set resources.limits=null).
+resources:
+  limits:
+    cpu: 100m
+    memory: 128Mi
+  requests:
+    cpu: 10m
+    memory: 32Mi
+
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

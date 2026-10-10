@@ -1,0 +1,28 @@
+# Every optional block.
+nameOverride: clip
+fullnameOverride: my-clipboard
+commonLabels: {team: platform}
+imagePullSecrets: [{name: regcred}]
+image: {tag: v1.2.3, pullPolicy: IfNotPresent}
+config: {mongodbUri: "mongodb://mongo:27017/clipboard", tokenExpiry: never}
+extraEnv:
+  - {name: IS_LOCAL, value: "true"}
+  - {name: FROM_CM, valueFrom: {configMapKeyRef: {name: cm, key: k}}}
+service: {type: LoadBalancer, port: 80, annotations: {a: b}}
+httpRoute:
+  enabled: true
+  annotations: {a: b}
+  parentRef: {name: gw, namespace: gw-ns, sectionName: https}
+  hostnames: [a.example.com, b.example.com]
+persistence: {storageClass: fast, size: 50Gi, annotations: {a: b}}
+podAnnotations: {a: b}
+podLabels: {tier: web}
+podSecurityContext: {fsGroup: 1000}
+securityContext: {allowPrivilegeEscalation: false}
+nodeSelector: {disktype: ssd}
+tolerations: [{key: dedicated, operator: Exists}]
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions: [{key: zone, operator: In, values: [a]}]

@@ -1,0 +1,20 @@
+{{- if .Values.httpRoute.enabled }}
+Clipboard is routed through the HTTPRoute {{ include "clipboard.fullname" . }}
+(Gateway: {{ .Values.httpRoute.parentRef.name }}).
+{{- with .Values.httpRoute.hostnames }}
+Hostnames:
+{{- range . }}
+  - {{ . }}
+{{- end }}
+{{- end }}
+{{- else }}
+Reach Clipboard locally with:
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "clipboard.fullname" . }} 8080:{{ .Values.service.port }}
+
+then open http://localhost:8080. Set httpRoute.enabled=true to expose it through a Gateway.
+{{- end }}
+{{- if not .Values.persistence.enabled }}
+
+WARNING: persistence is disabled; uploaded files are lost when the pod is rescheduled.
+{{- end }}

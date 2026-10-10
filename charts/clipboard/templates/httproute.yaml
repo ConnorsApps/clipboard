@@ -1,0 +1,35 @@
+{{- if .Values.httpRoute.enabled }}
+{{- $parent := .Values.httpRoute.parentRef | default dict }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "clipboard.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "clipboard.labels" . | nindent 4 }}
+  {{- with .Values.httpRoute.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  parentRefs:
+    - name: {{ required "httpRoute.parentRef.name is required when httpRoute.enabled is true" $parent.name | quote }}
+      {{- with $parent.namespace }}
+      namespace: {{ . | quote }}
+      {{- end }}
+      {{- with $parent.sectionName }}
+      sectionName: {{ . | quote }}
+      {{- end }}
+  {{- with .Values.httpRoute.hostnames }}
+  hostnames:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: {{ include "clipboard.fullname" . }}
+          port: {{ .Values.service.port }}
+{{- end }}

@@ -1,4 +1,0 @@
-charts/
-# Keep packaged charts and index for GitHub Helm repo
-!*.tgz
-!index.yaml
