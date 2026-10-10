@@ -1,6 +1,0 @@
-config:
-  mongodbUri: mongodb://mongo.example.com:27017/clipboard
-  tokenExpiry: never
-persistence:
-  storageClass: fast
-  size: 50Gi

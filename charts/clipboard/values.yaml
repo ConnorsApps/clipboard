@@ -5,25 +5,15 @@ commonLabels: {}
 image:
   repository: ghcr.io/connorsapps/clipboard
   tag: latest
-  # Only the `latest` tag is published, so always pull.
-  pullPolicy: Always
+  pullPolicy: Always  # only :latest is published
 imagePullSecrets: []
 
-# Application config (see the README for what each setting does).
 config:
-  # Comma-separated passwords; each password is one user. Required unless
-  # existingSecret is set. The app would otherwise fall back to the password "1234".
-  passwords: ""
-  # Optional. Persists auth tokens across restarts; unset keeps tokens in memory.
-  mongodbUri: ""
-  # "10d", "30d", "never", ... Empty uses the app default (30d). Only applies with mongodbUri.
-  tokenExpiry: ""
+  passwords: ""    # comma-separated, one per user; required unless existingSecret is set
+  mongodbUri: ""   # persists tokens across restarts; empty = in-memory
+  tokenExpiry: ""  # 10d, never, ...; empty = app default (30d)
 
-# Use a Secret you manage instead of one rendered from config.passwords/mongodbUri.
-# It needs the key CLIPBOARD_PASSWORDS and may hold MONGODB_URI.
-existingSecret: ""
-
-# Extra container env, as a list of Kubernetes EnvVar objects.
+existingSecret: ""  # keys: CLIPBOARD_PASSWORDS, optional MONGODB_URI
 extraEnv: []
 
 service:
@@ -31,30 +21,28 @@ service:
   port: 8080
   annotations: {}
 
-# Gateway API HTTPRoute (needs the Gateway API CRDs and an existing Gateway).
-# Long-lived WebSockets (/ws) and large uploads (/api/uploads) pass through it,
-# so make sure the Gateway's request timeouts allow both.
+# Needs the Gateway API CRDs. The Gateway's timeouts must allow long-lived
+# WebSockets (/ws) and large uploads.
 httpRoute:
   enabled: false
   annotations: {}
   parentRef:
-    name: ""          # required when enabled: the Gateway to attach to
-    namespace: ""     # Gateway namespace; empty means the release namespace
-    sectionName: ""   # listener name; empty attaches to every listener
-  hostnames: []       # empty matches any hostname the listener allows
+    name: ""         # required when enabled
+    namespace: ""    # default: release namespace
+    sectionName: ""  # default: all listeners
+  hostnames: []
 
-# Uploaded files live in /data.
+# Uploaded files, mounted at /data.
 persistence:
-  enabled: true       # false uses an emptyDir: files are lost when the pod is rescheduled
-  existingClaim: ""   # use an existing PVC instead of creating one
-  storageClass: ""    # empty uses the cluster default
+  enabled: true  # false = emptyDir
+  existingClaim: ""
+  storageClass: ""
   accessModes:
     - ReadWriteOnce
   size: 10Gi
   annotations: {}
 
-# Helm merges maps, so `resources: {}` keeps these defaults; to drop one, set it
-# to null (e.g. --set resources.limits=null).
+# Maps merge; drop a default with null (--set resources.limits=null).
 resources:
   limits:
     cpu: 100m

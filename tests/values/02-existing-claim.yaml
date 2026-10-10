@@ -1,2 +1,0 @@
-persistence:
-  existingClaim: old-files-pvc

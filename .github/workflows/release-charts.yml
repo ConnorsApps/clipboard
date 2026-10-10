@@ -1,10 +1,7 @@
 name: Release Helm Chart
 
-# Pushing a bumped `version` in charts/clipboard/Chart.yaml to main publishes a
-# GitHub Release and adds the chart to the index on the gh-pages branch:
-#   helm repo add clipboard https://connorsapps.github.io/clipboard
-# Chart changes without a version bump are tested but not released
-# (chart-releaser skips versions that already exist).
+# Bump `version` in charts/clipboard/Chart.yaml and merge to main to release
+# (existing versions are skipped). Index: https://connorsapps.github.io/clipboard
 
 on:
   push:
@@ -27,20 +24,15 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
-
       - uses: azure/setup-helm@v5
-
-      - name: Lint and render the chart
-        run: ./scripts/helm-test.sh
+      - run: ./scripts/helm-test.sh
 
   release:
-    # Only ever release from main, including for manual runs on other branches.
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    # Two overlapping releases would race on the gh-pages index.
     concurrency:
       group: release-charts
       cancel-in-progress: false
@@ -56,15 +48,13 @@ jobs:
           git config user.name "$GITHUB_ACTOR"
           git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
 
-      # chart-releaser publishes the index to gh-pages and needs the branch to exist.
-      - name: Create gh-pages branch if missing
+      # chart-releaser needs the gh-pages branch to exist.
+      - name: Create gh-pages if missing
         run: |
-          if git ls-remote --exit-code --heads origin gh-pages >/dev/null; then
-            exit 0
-          fi
+          git ls-remote --exit-code --heads origin gh-pages >/dev/null && exit 0
           git checkout --orphan gh-pages
           git rm -rf --quiet .
-          git commit --allow-empty -m "Initialize gh-pages for the Helm chart index"
+          git commit --allow-empty -m "Initialize gh-pages"
           git push origin gh-pages
           git checkout --force "$GITHUB_REF_NAME"
 

@@ -7,9 +7,7 @@ metadata:
   labels:
     {{- include "clipboard.labels" . | nindent 4 }}
 spec:
-  # One replica only: WebSocket connections and the in-memory token store live
-  # in the process, and the files volume is ReadWriteOnce. Recreate (not a
-  # rolling update) so the old pod releases the volume before the new one starts.
+  # Single replica: tokens and WebSockets are per-process, the PVC is RWO.
   replicas: 1
   strategy:
     type: Recreate
@@ -24,7 +22,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       annotations:
-        # Restart the pod when the chart-managed Secret changes (env vars are read once).
+        # Roll the pod when the chart's Secret changes.
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
@@ -65,7 +63,7 @@ spec:
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
-          # The app has no health endpoint, so check that the port accepts connections.
+          # No health endpoint; check the port.
           readinessProbe:
             tcpSocket:
               port: http

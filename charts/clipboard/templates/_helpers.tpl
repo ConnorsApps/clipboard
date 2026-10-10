@@ -2,10 +2,7 @@
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{/*
-Base name for every object. Do not change how names are generated: the PVC holds
-user data, and a different name on upgrade orphans it.
-*/}}
+{{/* Don't change how names are generated: the PVC holds user data. */}}
 {{- define "clipboard.fullname" -}}
 {{- if .Values.fullnameOverride -}}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" -}}
@@ -23,7 +20,7 @@ user data, and a different name on upgrade orphans it.
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{/* Immutable on the Deployment: never add or change a label here. */}}
+{{/* Immutable on the Deployment. */}}
 {{- define "clipboard.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "clipboard.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
@@ -47,13 +44,9 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- default (printf "%s-files" (include "clipboard.fullname" .)) .Values.persistence.existingClaim -}}
 {{- end -}}
 
-{{/*
-Fail fast if values written for the old HULL-based chart (1.x) are still set.
-Otherwise the `hull:` block is silently ignored and the release deploys without
-the settings the user thinks they made.
-*/}}
+{{/* Reject 1.x (HULL) values instead of silently ignoring them. */}}
 {{- define "clipboard.rejectHullValues" -}}
 {{- if .Values.hull }}
-{{- fail "values.hull.* is set, but this chart no longer uses HULL (vidispine/hull) and the `hull:` key has no effect. Move your settings to the new keys (config.passwords, config.mongodbUri, persistence.*, resources, ...); see \"Upgrading from 1.x\" in the README." -}}
+{{- fail "values.hull is set but this chart no longer uses HULL; move settings to config.*, persistence.*, etc. (see \"Upgrading from chart 1.x\" in the README)" -}}
 {{- end -}}
 {{- end -}}
