@@ -43,10 +43,3 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- define "clipboard.pvcName" -}}
 {{- default (printf "%s-files" (include "clipboard.fullname" .)) .Values.persistence.existingClaim -}}
 {{- end -}}
-
-{{/* Reject 1.x (HULL) values instead of silently ignoring them. */}}
-{{- define "clipboard.rejectHullValues" -}}
-{{- if .Values.hull }}
-{{- fail "values.hull is set but this chart no longer uses HULL; move settings to config.*, persistence.*, etc. (see \"Upgrading from chart 1.x\" in the README)" -}}
-{{- end -}}
-{{- end -}}

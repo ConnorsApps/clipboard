@@ -12,13 +12,7 @@ for f in "$V"/*.yaml; do
   helm template t "$CHART" -f "$V/00-base.yaml" -f "$f" >/dev/null
 done
 
-# Must fail to render, with the given message.
-must_fail() {
-  local msg="$1" err
-  shift
-  err="$(helm template t "$CHART" "$@" 2>&1 >/dev/null)" && { echo "rendered, expected: $msg" >&2; exit 1; }
-  grep -q -- "$msg" <<<"$err" || { echo "wrong error for '$msg': $err" >&2; exit 1; }
-}
-must_fail "config.passwords is required"
-must_fail "no longer uses HULL" -f "$V/00-base.yaml" --set hull.objects.secret=x
+# No password must fail to render.
+err="$(helm template t "$CHART" 2>&1 >/dev/null)" && { echo "rendered without a password" >&2; exit 1; }
+grep -q "config.passwords is required" <<<"$err" || { echo "unexpected error: $err" >&2; exit 1; }
 echo "ok"
