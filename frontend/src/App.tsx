@@ -1,46 +1,30 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { useCallback, useState } from 'react'
 import Login from './Login'
-import Clipboard from './Clipboard'
-import Files from './Files'
-import Layout from './Layout'
+import Home from './Home'
+import { clearToken, getToken, setToken } from './api'
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const token = localStorage.getItem('clipboard_token')
-  if (!token) {
-    return <Navigate to="/login" replace />
-  }
-  return <>{children}</>
+// One screen: drop old routes (/files, /login). Reloaded with the viewer open: leave its
+// history entry so Back isn't a no-op.
+if (window.history.state?.viewer) {
+  window.history.back()
+} else {
+  window.history.replaceState(null, '', '/')
 }
 
 function App() {
-  return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route
-          path="/"
-          element={
-            <ProtectedRoute>
-              <Layout currentTab="clipboard">
-                <Clipboard />
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/files"
-          element={
-            <ProtectedRoute>
-              <Layout currentTab="files">
-                <Files />
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </BrowserRouter>
-  )
+  const [token, setTokenState] = useState(getToken)
+
+  const handleLogin = (newToken: string) => {
+    setToken(newToken)
+    setTokenState(newToken)
+  }
+
+  const handleLogout = useCallback(() => {
+    clearToken()
+    setTokenState(null)
+  }, [])
+
+  return token ? <Home key={token} onLogout={handleLogout} /> : <Login onLogin={handleLogin} />
 }
 
 export default App

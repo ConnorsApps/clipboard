@@ -1,10 +1,15 @@
 package clipboard
 
 import (
+	"errors"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
+
+// writeWait bounds how long one slow client can hold up a broadcast
+const writeWait = 10 * time.Second
 
 // WSMessageType represents the type of WebSocket message
 type WSMessageType string
@@ -16,27 +21,35 @@ const (
 	Clear WSMessageType = "clear"
 	// FilesList indicates a files list update
 	FilesList WSMessageType = "files_list"
+	// Ping asks for a Pong, to detect dead connections
+	Ping WSMessageType = "ping"
+	// Pong answers a Ping
+	Pong WSMessageType = "pong"
 )
 
 // WSMessage represents a WebSocket message
 type WSMessage struct {
 	Type    WSMessageType `json:"type"`
 	Content string        `json:"content,omitempty"`
-	Files   interface{}   `json:"files,omitempty"`
+	// Version increases with each change, so clients can drop stale messages
+	Version uint64      `json:"version,omitempty"`
+	Files   interface{} `json:"files,omitempty"`
 }
 
 // Service manages clipboard state and WebSocket connections for a single user
 type Service struct {
-	content   string
-	mu        sync.RWMutex
-	clients   map[*websocket.Conn]bool
+	content string
+	version uint64
+	mu      sync.RWMutex
+	// Each connection's write lock: gorilla allows one concurrent writer
+	clients   map[*websocket.Conn]*sync.Mutex
 	clientsMu sync.RWMutex
 }
 
 // New creates a new clipboard service
 func New() *Service {
 	return &Service{
-		clients: make(map[*websocket.Conn]bool),
+		clients: make(map[*websocket.Conn]*sync.Mutex),
 	}
 }
 
@@ -78,24 +91,32 @@ func (s *Service) GetContent() string {
 	return s.content
 }
 
-// SetContent updates the clipboard content
-func (s *Service) SetContent(content string) {
-	s.mu.Lock()
-	s.content = content
-	s.mu.Unlock()
+func (s *Service) snapshot() (string, uint64) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.content, s.version
 }
 
-// ClearContent clears the clipboard content
-func (s *Service) ClearContent() {
+// SetContent updates the clipboard content and returns its new version
+func (s *Service) SetContent(content string) uint64 {
 	s.mu.Lock()
-	s.content = ""
-	s.mu.Unlock()
+	defer s.mu.Unlock()
+	s.content = content
+	s.version++
+	return s.version
+}
+
+// UpdateContent sets the content and sends it, versioned, to every client including the
+// sender, so concurrent edits converge.
+func (s *Service) UpdateContent(content string) {
+	version := s.SetContent(content)
+	s.Broadcast(WSMessage{Type: "content", Content: content, Version: version})
 }
 
 // RegisterClient adds a WebSocket client to the service
 func (s *Service) RegisterClient(conn *websocket.Conn) {
 	s.clientsMu.Lock()
-	s.clients[conn] = true
+	s.clients[conn] = &sync.Mutex{}
 	s.clientsMu.Unlock()
 }
 
@@ -106,36 +127,76 @@ func (s *Service) UnregisterClient(conn *websocket.Conn) {
 	s.clientsMu.Unlock()
 }
 
-// Broadcast sends a message to all connected clients except the excluded one
-func (s *Service) Broadcast(msg WSMessage, exclude *websocket.Conn) {
+// write sends msg on conn; callers must hold the connection's write lock
+func write(conn *websocket.Conn, msg WSMessage) error {
+	conn.SetWriteDeadline(time.Now().Add(writeWait))
+	return conn.WriteJSON(msg)
+}
+
+// writeJSON writes msg to conn while holding that connection's write lock
+func writeJSON(conn *websocket.Conn, writeMu *sync.Mutex, msg WSMessage) error {
+	writeMu.Lock()
+	defer writeMu.Unlock()
+	return write(conn, msg)
+}
+
+func (s *Service) writeLock(conn *websocket.Conn) (*sync.Mutex, error) {
 	s.clientsMu.RLock()
 	defer s.clientsMu.RUnlock()
+	writeMu, ok := s.clients[conn]
+	if !ok {
+		return nil, errors.New("client not registered")
+	}
+	return writeMu, nil
+}
 
-	for client := range s.clients {
-		if client == exclude {
-			continue
-		}
-		if err := client.WriteJSON(msg); err != nil {
-			// Log error but continue broadcasting to other clients
-			continue
+// Send writes a message to a single registered client
+func (s *Service) Send(conn *websocket.Conn, msg WSMessage) error {
+	writeMu, err := s.writeLock(conn)
+	if err != nil {
+		return err
+	}
+	return writeJSON(conn, writeMu, msg)
+}
+
+// SendInitialState sends a new client the content and file list, read under its write lock
+// so a racing broadcast lands after this snapshot, not before.
+func (s *Service) SendInitialState(conn *websocket.Conn, files func() interface{}) error {
+	writeMu, err := s.writeLock(conn)
+	if err != nil {
+		return err
+	}
+	writeMu.Lock()
+	defer writeMu.Unlock()
+	content, version := s.snapshot()
+	if err := write(conn, WSMessage{Type: "content", Content: content, Version: version}); err != nil {
+		return err
+	}
+	if files != nil {
+		return write(conn, WSMessage{Type: FilesList, Files: files()})
+	}
+	return nil
+}
+
+// Broadcast sends a message to all connected clients
+func (s *Service) Broadcast(msg WSMessage) {
+	// Copy so slow writes don't hold clientsMu
+	s.clientsMu.RLock()
+	targets := make(map[*websocket.Conn]*sync.Mutex, len(s.clients))
+	for client, writeMu := range s.clients {
+		targets[client] = writeMu
+	}
+	s.clientsMu.RUnlock()
+
+	for client, writeMu := range targets {
+		if err := writeJSON(client, writeMu, msg); err != nil {
+			// Unusable now; closing ends its read loop, which unregisters it
+			client.Close()
 		}
 	}
 }
 
 // BroadcastFilesList sends a files list update to all connected clients
 func (s *Service) BroadcastFilesList(files interface{}) {
-	s.clientsMu.RLock()
-	defer s.clientsMu.RUnlock()
-
-	msg := WSMessage{
-		Type:  FilesList,
-		Files: files,
-	}
-
-	for client := range s.clients {
-		if err := client.WriteJSON(msg); err != nil {
-			// Log error but continue broadcasting to other clients
-			continue
-		}
-	}
+	s.Broadcast(WSMessage{Type: FilesList, Files: files})
 }

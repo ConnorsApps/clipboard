@@ -2,10 +2,13 @@ package files
 
 import (
 	"encoding/json"
+	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -18,6 +21,8 @@ import (
 type Service struct {
 	filesDir      string
 	broadcastFunc func([]FileInfo)
+	// Serializes list broadcasts so an older list can't arrive after a newer one
+	broadcastMu sync.Mutex
 }
 
 // New creates a new files service
@@ -113,6 +118,16 @@ func (m *Manager) ListFiles(w http.ResponseWriter, r *http.Request) {
 	svc.ListFiles(w, r)
 }
 
+// FilesForUser returns the current file list for the given user
+func (m *Manager) FilesForUser(userID string) []FileInfo {
+	svc, _, err := m.GetOrCreate(userID)
+	if err != nil {
+		log.Error().Err(err).Str("userID", userID).Msg("Failed to get files service")
+		return []FileInfo{}
+	}
+	return svc.getFilesList()
+}
+
 // HandleUpload routes the request to the authenticated user's tusd handler.
 // The tusd handler expects the path with the base prefix stripped (e.g. "" or "upload-id").
 func (m *Manager) HandleUpload(w http.ResponseWriter, r *http.Request) {
@@ -151,29 +166,82 @@ func cloneURL(u *url.URL) *url.URL {
 	return &u2
 }
 
-// getOriginalFilename reads the original filename from the tusd .info file
-func (s *Service) getOriginalFilename(fileID string) string {
-	infoPath := filepath.Join(s.filesDir, fileID+".info")
-	data, err := os.ReadFile(infoPath)
-	if err != nil {
-		log.Warn().Err(err).Str("file", fileID).Msg("Failed to read .info file")
-		return fileID
-	}
-
-	var info TusdInfo
-	if err := json.Unmarshal(data, &info); err != nil {
-		log.Warn().Err(err).Str("file", fileID).Msg("Failed to parse .info file")
-		return fileID
-	}
-
-	if info.MetaData.Filename != "" {
-		return info.MetaData.Filename
-	}
-
-	return fileID
+// Common media missing from Go's built-in MIME table (Alpine has no /etc/mime.types)
+var extraTypes = map[string]string{
+	".heic": "image/heic",
+	".heif": "image/heif",
+	".mov":  "video/quicktime",
+	".mp4":  "video/mp4",
+	".m4v":  "video/mp4",
+	".webm": "video/webm",
+	".mp3":  "audio/mpeg",
+	".m4a":  "audio/mp4",
+	".txt":  "text/plain; charset=utf-8",
 }
 
-// getFilesList returns the current list of files
+type fileMeta struct {
+	name     string
+	mimeType string
+	complete bool
+}
+
+// readMeta returns a stored upload's original name, MIME type and completion state.
+func (s *Service) readMeta(fileID string, stat os.FileInfo) fileMeta {
+	// Without readable .info, a fresh empty file is an upload tusd is still creating
+	settled := stat.Size() > 0 || time.Since(stat.ModTime()) > time.Minute
+	meta := fileMeta{name: fileID, complete: settled}
+
+	infoPath := filepath.Join(s.filesDir, fileID+".info")
+	if data, err := os.ReadFile(infoPath); err != nil {
+		if !os.IsNotExist(err) {
+			log.Warn().Err(err).Str("file", fileID).Msg("Failed to read .info file")
+		}
+	} else {
+		var info TusdInfo
+		if err := json.Unmarshal(data, &info); err != nil {
+			if settled {
+				log.Warn().Err(err).Str("file", fileID).Msg("Failed to parse .info file")
+			}
+		} else {
+			if info.MetaData.Filename != "" {
+				meta.name = info.MetaData.Filename
+			}
+			// Client-supplied; use only if valid
+			if _, _, err := mime.ParseMediaType(info.MetaData.Filetype); err == nil {
+				meta.mimeType = info.MetaData.Filetype
+			}
+			// tusd appends chunks to an initially empty file
+			meta.complete = !info.SizeIsDeferred && stat.Size() >= info.Size
+		}
+	}
+
+	if meta.mimeType == "" {
+		meta.mimeType = detectType(filepath.Join(s.filesDir, fileID), meta.name)
+	}
+	return meta
+}
+
+// detectType guesses a MIME type from the extension, then by sniffing
+func detectType(path, name string) string {
+	ext := strings.ToLower(filepath.Ext(name))
+	if t := mime.TypeByExtension(ext); t != "" {
+		return t
+	}
+	if t, ok := extraTypes[ext]; ok {
+		return t
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		return "application/octet-stream"
+	}
+	defer f.Close()
+	buf := make([]byte, 512)
+	n, _ := io.ReadFull(f, buf)
+	return http.DetectContentType(buf[:n])
+}
+
+// getFilesList returns the completed uploads, newest first
 func (s *Service) getFilesList() []FileInfo {
 	files := []FileInfo{}
 
@@ -184,13 +252,14 @@ func (s *Service) getFilesList() []FileInfo {
 		return files
 	}
 
+	modTimes := make(map[string]time.Time, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
 		}
 
-		// Skip .info files created by tusd
-		if strings.HasSuffix(entry.Name(), ".info") {
+		// Skip tusd's metadata and lock files
+		if strings.HasSuffix(entry.Name(), ".info") || strings.HasSuffix(entry.Name(), ".lock") {
 			continue
 		}
 
@@ -200,26 +269,36 @@ func (s *Service) getFilesList() []FileInfo {
 			continue
 		}
 
-		// Get original filename from .info file
-		originalName := s.getOriginalFilename(entry.Name())
+		meta := s.readMeta(entry.Name(), info)
+		if !meta.complete {
+			continue
+		}
 
+		modTimes[entry.Name()] = info.ModTime()
 		files = append(files, FileInfo{
 			ID:         entry.Name(),
-			Name:       originalName,
+			Name:       meta.name,
+			Type:       meta.mimeType,
 			Size:       info.Size(),
 			UploadedAt: info.ModTime().Format(time.RFC3339),
 		})
 	}
+
+	sort.SliceStable(files, func(i, j int) bool {
+		return modTimes[files[i].ID].After(modTimes[files[j].ID])
+	})
 
 	return files
 }
 
 // BroadcastFilesList sends the current file list to all WebSocket clients
 func (s *Service) BroadcastFilesList() {
-	if s.broadcastFunc != nil {
-		files := s.getFilesList()
-		s.broadcastFunc(files)
+	if s.broadcastFunc == nil {
+		return
 	}
+	s.broadcastMu.Lock()
+	defer s.broadcastMu.Unlock()
+	s.broadcastFunc(s.getFilesList())
 }
 
 // HandleFile handles file download and delete operations
@@ -236,15 +315,21 @@ func (s *Service) HandleFile(w http.ResponseWriter, r *http.Request) {
 	filePath := filepath.Join(s.filesDir, fileID)
 
 	// Check if file exists
-	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+	stat, err := os.Stat(filePath)
+	if os.IsNotExist(err) {
 		http.Error(w, "File not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	switch r.Method {
 	case http.MethodGet:
 		// Download file with the original filename, not the on-disk storage ID
-		originalName := s.getOriginalFilename(fileID)
+		meta := s.readMeta(fileID, stat)
+		originalName := meta.name
 		asciiName := strings.Map(func(r rune) rune {
 			if r < 0x20 || r == '"' || r > 0x7e {
 				return '_'
@@ -252,6 +337,13 @@ func (s *Service) HandleFile(w http.ResponseWriter, r *http.Request) {
 			return r
 		}, originalName)
 		w.Header().Set("Content-Disposition", "attachment; filename=\""+asciiName+"\"; filename*=UTF-8''"+url.QueryEscape(originalName))
+		// Stored files have no extension to infer it from
+		w.Header().Set("Content-Type", meta.mimeType)
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		if meta.complete {
+			// Upload IDs are never reused, so finished files never change
+			w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
+		}
 		http.ServeFile(w, r, filePath)
 
 	case http.MethodDelete:

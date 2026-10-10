@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 type FileInfo struct {
 	ID         string `json:"id"`
 	Name       string `json:"name"`
+	Type       string `json:"type"`
 	Size       int64  `json:"size"`
 	UploadedAt string `json:"uploadedAt"`
 }
@@ -134,7 +136,11 @@ func (c *Client) UploadFileFromReader(r io.Reader, size int64, filename string) 
 	req.Header.Set("Upload-Length", strconv.FormatInt(size, 10))
 	req.Header.Set("Content-Type", "application/offset+octet-stream")
 	req.Header.Set("Upload-Offset", "0")
-	req.Header.Set("Upload-Metadata", "filename "+base64.StdEncoding.EncodeToString([]byte(filepath.Base(filename))))
+	metadata := "filename " + base64.StdEncoding.EncodeToString([]byte(filepath.Base(filename)))
+	if fileType := mime.TypeByExtension(filepath.Ext(filename)); fileType != "" {
+		metadata += ",filetype " + base64.StdEncoding.EncodeToString([]byte(fileType))
+	}
+	req.Header.Set("Upload-Metadata", metadata)
 	req.ContentLength = size
 
 	resp, err := c.http.Do(req)
