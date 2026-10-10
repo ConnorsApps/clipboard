@@ -3,9 +3,13 @@ import Login from './Login'
 import Home from './Home'
 import { clearToken, getToken, setToken } from './api'
 
-// Everything lives on one screen: tidy up old routes like /files and /login, and drop any
-// history state left over from an open file viewer before a reload
-window.history.replaceState(null, '', '/')
+// Everything lives on one screen: tidy up old routes like /files and /login. If the page was
+// reloaded with the file viewer open, step back off its history entry so Back isn't a no-op.
+if (window.history.state?.viewer) {
+  window.history.back()
+} else {
+  window.history.replaceState(null, '', '/')
+}
 
 function App() {
   const [token, setTokenState] = useState(getToken)

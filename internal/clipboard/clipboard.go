@@ -21,18 +21,26 @@ const (
 	Clear WSMessageType = "clear"
 	// FilesList indicates a files list update
 	FilesList WSMessageType = "files_list"
+	// Ping asks the server to answer with Pong, so clients can notice a dead connection
+	Ping WSMessageType = "ping"
+	// Pong answers a Ping
+	Pong WSMessageType = "pong"
 )
 
 // WSMessage represents a WebSocket message
 type WSMessage struct {
 	Type    WSMessageType `json:"type"`
 	Content string        `json:"content,omitempty"`
-	Files   interface{}   `json:"files,omitempty"`
+	// Version increases with every content change, so clients can drop content messages
+	// that arrive out of order
+	Version uint64      `json:"version,omitempty"`
+	Files   interface{} `json:"files,omitempty"`
 }
 
 // Service manages clipboard state and WebSocket connections for a single user
 type Service struct {
 	content string
+	version uint64
 	mu      sync.RWMutex
 	// clients maps each connection to its write lock: gorilla/websocket supports only
 	// one concurrent writer, and broadcasts arrive from reader and tusd goroutines
@@ -85,18 +93,27 @@ func (s *Service) GetContent() string {
 	return s.content
 }
 
-// SetContent updates the clipboard content
-func (s *Service) SetContent(content string) {
-	s.mu.Lock()
-	s.content = content
-	s.mu.Unlock()
+func (s *Service) snapshot() (string, uint64) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.content, s.version
 }
 
-// ClearContent clears the clipboard content
-func (s *Service) ClearContent() {
+// SetContent updates the clipboard content and returns its new version
+func (s *Service) SetContent(content string) uint64 {
 	s.mu.Lock()
-	s.content = ""
-	s.mu.Unlock()
+	defer s.mu.Unlock()
+	s.content = content
+	s.version++
+	return s.version
+}
+
+// UpdateContent sets the content and sends it to every client, including the one that made
+// the change. Echoing to the sender and tagging the version means every client ends on the
+// server's final text even when two devices edit at once.
+func (s *Service) UpdateContent(content string) {
+	version := s.SetContent(content)
+	s.Broadcast(WSMessage{Type: "content", Content: content, Version: version})
 }
 
 // RegisterClient adds a WebSocket client to the service
@@ -113,34 +130,65 @@ func (s *Service) UnregisterClient(conn *websocket.Conn) {
 	s.clientsMu.Unlock()
 }
 
-// writeJSON writes msg to conn while holding that connection's write lock
-func writeJSON(conn *websocket.Conn, writeMu *sync.Mutex, msg WSMessage) error {
-	writeMu.Lock()
-	defer writeMu.Unlock()
+// write sends msg on conn; callers must hold the connection's write lock
+func write(conn *websocket.Conn, msg WSMessage) error {
 	conn.SetWriteDeadline(time.Now().Add(writeWait))
 	return conn.WriteJSON(msg)
 }
 
+// writeJSON writes msg to conn while holding that connection's write lock
+func writeJSON(conn *websocket.Conn, writeMu *sync.Mutex, msg WSMessage) error {
+	writeMu.Lock()
+	defer writeMu.Unlock()
+	return write(conn, msg)
+}
+
+func (s *Service) writeLock(conn *websocket.Conn) (*sync.Mutex, error) {
+	s.clientsMu.RLock()
+	defer s.clientsMu.RUnlock()
+	writeMu, ok := s.clients[conn]
+	if !ok {
+		return nil, errors.New("client not registered")
+	}
+	return writeMu, nil
+}
+
 // Send writes a message to a single registered client
 func (s *Service) Send(conn *websocket.Conn, msg WSMessage) error {
-	s.clientsMu.RLock()
-	writeMu, ok := s.clients[conn]
-	s.clientsMu.RUnlock()
-	if !ok {
-		return errors.New("client not registered")
+	writeMu, err := s.writeLock(conn)
+	if err != nil {
+		return err
 	}
 	return writeJSON(conn, writeMu, msg)
 }
 
-// Broadcast sends a message to all connected clients except the excluded one
-func (s *Service) Broadcast(msg WSMessage, exclude *websocket.Conn) {
+// SendInitialState sends a newly registered client the current content and, if files is set,
+// the file list. The state is read while holding the connection's write lock, so a broadcast
+// racing with the connect is delivered after this snapshot instead of being overwritten by it.
+func (s *Service) SendInitialState(conn *websocket.Conn, files func() interface{}) error {
+	writeMu, err := s.writeLock(conn)
+	if err != nil {
+		return err
+	}
+	writeMu.Lock()
+	defer writeMu.Unlock()
+	content, version := s.snapshot()
+	if err := write(conn, WSMessage{Type: "content", Content: content, Version: version}); err != nil {
+		return err
+	}
+	if files != nil {
+		return write(conn, WSMessage{Type: FilesList, Files: files()})
+	}
+	return nil
+}
+
+// Broadcast sends a message to all connected clients
+func (s *Service) Broadcast(msg WSMessage) {
 	// Snapshot the clients so a slow write doesn't hold clientsMu and stall (un)registration
 	s.clientsMu.RLock()
 	targets := make(map[*websocket.Conn]*sync.Mutex, len(s.clients))
 	for client, writeMu := range s.clients {
-		if client != exclude {
-			targets[client] = writeMu
-		}
+		targets[client] = writeMu
 	}
 	s.clientsMu.RUnlock()
 
@@ -155,5 +203,5 @@ func (s *Service) Broadcast(msg WSMessage, exclude *websocket.Conn) {
 
 // BroadcastFilesList sends a files list update to all connected clients
 func (s *Service) BroadcastFilesList(files interface{}) {
-	s.Broadcast(WSMessage{Type: FilesList, Files: files}, nil)
+	s.Broadcast(WSMessage{Type: FilesList, Files: files})
 }

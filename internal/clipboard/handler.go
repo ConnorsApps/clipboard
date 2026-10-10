@@ -42,8 +42,7 @@ func (m *Manager) HandleSetClipboard(getUserID func(*http.Request) (string, bool
 		}
 
 		svc := m.GetOrCreate(userID)
-		svc.SetContent(req.Content)
-		svc.Broadcast(WSMessage{Type: "content", Content: req.Content}, nil)
+		svc.UpdateContent(req.Content)
 
 		w.WriteHeader(http.StatusNoContent)
 	}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { uploadFile, type FileInfo } from './api'
+import { createUpload, type FileInfo, type UploadHandle } from './api'
 import { fileKind } from './format'
 
 const MAX_PARALLEL = 3
@@ -22,30 +22,44 @@ let nextKey = 0
 export function useUploads(files: FileInfo[] | null) {
   const [uploads, setUploads] = useState<PendingUpload[]>([])
   const [thumbs, setThumbs] = useState<Record<string, string>>({})
-  const cancels = useRef(new Map<string, () => void>())
+  // Uploads that have been created; kept after an error so Retry resumes instead of restarting
+  const handles = useRef(new Map<string, UploadHandle>())
+  // Uploads currently transferring. Tracked here rather than read from state, so a render that
+  // hasn't caught up with a status change can never start the same upload twice.
+  const active = useRef(new Set<string>())
 
   const patch = useCallback((key: string, changes: Partial<PendingUpload>) => {
     setUploads((list) => list.map((u) => (u.key === key ? { ...u, ...changes } : u)))
   }, [])
 
-  // Start queued uploads while under the parallel limit
+  // Start queued uploads, oldest first, while under the parallel limit
   useEffect(() => {
-    const active = uploads.filter((u) => u.status === 'uploading').length
-    const ready = uploads.filter((u) => u.status === 'queued').slice(0, Math.max(0, MAX_PARALLEL - active))
+    const slots = MAX_PARALLEL - active.current.size
+    if (slots <= 0) return
+    const ready = uploads
+      .filter((u) => u.status === 'queued' && !active.current.has(u.key))
+      .reverse()
+      .slice(0, slots)
     for (const u of ready) {
-      patch(u.key, { status: 'uploading', progress: 0, error: undefined })
-      const cancel = uploadFile(u.file, {
-        onProgress: (progress) => patch(u.key, { progress }),
-        onSuccess: (fileId) => {
-          cancels.current.delete(u.key)
-          patch(u.key, { status: 'done', progress: 1, fileId })
-        },
-        onError: (err) => {
-          cancels.current.delete(u.key)
-          patch(u.key, { status: 'error', error: err.message })
-        },
-      })
-      cancels.current.set(u.key, cancel)
+      active.current.add(u.key)
+      let handle = handles.current.get(u.key)
+      if (!handle) {
+        handle = createUpload(u.file, {
+          onProgress: (progress) => patch(u.key, { progress }),
+          onSuccess: (fileId) => {
+            active.current.delete(u.key)
+            handles.current.delete(u.key)
+            patch(u.key, { status: 'done', progress: 1, fileId })
+          },
+          onError: (err) => {
+            active.current.delete(u.key)
+            patch(u.key, { status: 'error', error: err.message })
+          },
+        })
+        handles.current.set(u.key, handle)
+      }
+      patch(u.key, { status: 'uploading', error: undefined })
+      handle.start()
     }
   }, [uploads, patch])
 
@@ -87,9 +101,9 @@ export function useUploads(files: FileInfo[] | null) {
     latest.current = { uploads, thumbs }
   })
   useEffect(() => {
-    const pending = cancels.current
+    const pending = handles.current
     return () => {
-      for (const cancel of pending.values()) cancel()
+      for (const handle of pending.values()) handle.abort()
       for (const u of latest.current.uploads) if (u.previewUrl) URL.revokeObjectURL(u.previewUrl)
       for (const url of Object.values(latest.current.thumbs)) URL.revokeObjectURL(url)
     }
@@ -108,9 +122,11 @@ export function useUploads(files: FileInfo[] | null) {
 
   const retry = useCallback((key: string) => patch(key, { status: 'queued', error: undefined }), [patch])
 
+  // Cancels an upload, or drops a failed one; either way the partial upload is deleted
   const dismiss = useCallback((key: string) => {
-    cancels.current.get(key)?.()
-    cancels.current.delete(key)
+    handles.current.get(key)?.abort()
+    handles.current.delete(key)
+    active.current.delete(key)
     const upload = latest.current.uploads.find((u) => u.key === key)
     if (upload?.previewUrl) URL.revokeObjectURL(upload.previewUrl)
     setUploads((list) => list.filter((u) => u.key !== key))

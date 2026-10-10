@@ -21,6 +21,9 @@ import (
 type Service struct {
 	filesDir      string
 	broadcastFunc func([]FileInfo)
+	// broadcastMu serializes building and sending the list, so uploads finishing together
+	// can't deliver an older list after a newer one
+	broadcastMu sync.Mutex
 }
 
 // New creates a new files service
@@ -186,17 +189,24 @@ type fileMeta struct {
 }
 
 // readMeta reads the original filename, MIME type and completion state of a stored upload.
-// Uploads without a readable .info file are treated as complete and named by their ID.
-func (s *Service) readMeta(fileID string, sizeOnDisk int64) fileMeta {
-	meta := fileMeta{name: fileID, complete: true}
+// Files without a usable .info file are named by their ID.
+func (s *Service) readMeta(fileID string, stat os.FileInfo) fileMeta {
+	// tusd creates the empty data file just before writing its .info, so a fresh empty file
+	// without readable metadata is an upload being set up; anything else was put here directly
+	settled := stat.Size() > 0 || time.Since(stat.ModTime()) > time.Minute
+	meta := fileMeta{name: fileID, complete: settled}
 
 	infoPath := filepath.Join(s.filesDir, fileID+".info")
 	if data, err := os.ReadFile(infoPath); err != nil {
-		log.Warn().Err(err).Str("file", fileID).Msg("Failed to read .info file")
+		if !os.IsNotExist(err) {
+			log.Warn().Err(err).Str("file", fileID).Msg("Failed to read .info file")
+		}
 	} else {
 		var info TusdInfo
 		if err := json.Unmarshal(data, &info); err != nil {
-			log.Warn().Err(err).Str("file", fileID).Msg("Failed to parse .info file")
+			if settled {
+				log.Warn().Err(err).Str("file", fileID).Msg("Failed to parse .info file")
+			}
 		} else {
 			if info.MetaData.Filename != "" {
 				meta.name = info.MetaData.Filename
@@ -207,7 +217,7 @@ func (s *Service) readMeta(fileID string, sizeOnDisk int64) fileMeta {
 			}
 			// tusd creates the binary file empty and appends chunks, so an upload
 			// is finished once the bytes on disk reach the declared size
-			meta.complete = !info.SizeIsDeferred && sizeOnDisk >= info.Size
+			meta.complete = !info.SizeIsDeferred && stat.Size() >= info.Size
 		}
 	}
 
@@ -265,7 +275,7 @@ func (s *Service) getFilesList() []FileInfo {
 			continue
 		}
 
-		meta := s.readMeta(entry.Name(), info.Size())
+		meta := s.readMeta(entry.Name(), info)
 		if !meta.complete {
 			continue
 		}
@@ -289,10 +299,12 @@ func (s *Service) getFilesList() []FileInfo {
 
 // BroadcastFilesList sends the current file list to all WebSocket clients
 func (s *Service) BroadcastFilesList() {
-	if s.broadcastFunc != nil {
-		files := s.getFilesList()
-		s.broadcastFunc(files)
+	if s.broadcastFunc == nil {
+		return
 	}
+	s.broadcastMu.Lock()
+	defer s.broadcastMu.Unlock()
+	s.broadcastFunc(s.getFilesList())
 }
 
 // HandleFile handles file download and delete operations
@@ -322,7 +334,7 @@ func (s *Service) HandleFile(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		// Download file with the original filename, not the on-disk storage ID
-		meta := s.readMeta(fileID, stat.Size())
+		meta := s.readMeta(fileID, stat)
 		originalName := meta.name
 		asciiName := strings.Map(func(r rune) rune {
 			if r < 0x20 || r == '"' || r > 0x7e {

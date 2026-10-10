@@ -40,6 +40,9 @@ func TestGetFilesList(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "partial.info"), []byte(`{"Size":100,"MetaData":{"filename":"big.jpg"}}`), now)
 	writeFile(t, filepath.Join(dir, "partial.lock"), nil, now)
 
+	// Upload being created: tusd made the empty data file but hasn't written .info yet
+	writeFile(t, filepath.Join(dir, "creating"), nil, now)
+
 	// Upload whose length has not been declared yet
 	writeFile(t, filepath.Join(dir, "deferred"), nil, now.Add(time.Minute))
 	writeFile(t, filepath.Join(dir, "deferred.info"), []byte(`{"Size":0,"SizeIsDeferred":true,"MetaData":{"filename":"x.bin"}}`), now)

@@ -4,6 +4,8 @@ import { CheckIcon, CopyIcon, EraseIcon } from './icons'
 
 interface TextPanelProps {
   value: string
+  // Until the first sync, edits would be built on an empty box and overwrite the real text
+  readOnly: boolean
   onChange: (value: string) => void
   onClear: () => void
   onFocusChange: (focused: boolean) => void
@@ -13,7 +15,7 @@ interface TextPanelProps {
 // Don't pop the on-screen keyboard over everything when the page opens on a phone
 const autoFocus = window.matchMedia('(pointer: fine)').matches
 
-function TextPanel({ value, onChange, onClear, onFocusChange, onError }: TextPanelProps) {
+function TextPanel({ value, readOnly, onChange, onClear, onFocusChange, onError }: TextPanelProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [copied, setCopied] = useState(false)
 
@@ -50,7 +52,8 @@ function TextPanel({ value, onChange, onClear, onFocusChange, onError }: TextPan
         onChange={(e: ChangeEvent<HTMLTextAreaElement>) => onChange(e.target.value)}
         onFocus={() => onFocusChange(true)}
         onBlur={() => onFocusChange(false)}
-        placeholder="Type or paste text to share across your devices…"
+        readOnly={readOnly}
+        placeholder={readOnly ? 'Connecting…' : 'Type or paste text to share across your devices…'}
         autoFocus={autoFocus}
         spellCheck={false}
         className="block w-full min-h-32 lg:min-h-64 max-h-[45dvh] lg:max-h-[65dvh] p-3 sm:p-4 bg-dark-900 border-2 border-dark-700 rounded-xl text-white placeholder-gray-500 outline-none focus:border-accent-500 transition-colors resize-none overflow-y-auto leading-relaxed"
@@ -67,7 +70,7 @@ function TextPanel({ value, onChange, onClear, onFocusChange, onError }: TextPan
         </button>
         <button
           onClick={onClear}
-          disabled={!value}
+          disabled={!value || readOnly}
           className="flex items-center justify-center gap-2 px-5 py-3.5 font-semibold bg-dark-700 hover:bg-dark-700/70 text-gray-200 rounded-xl transition active:scale-[0.98] disabled:opacity-40 disabled:active:scale-100"
         >
           <EraseIcon />

@@ -70,7 +70,7 @@ helm install my-clipboard clipboard/clipboard -f my-values.yaml    # Deploy
 - **`server/`** — HTTP server setup, routing, middleware (CORS, token auth, user context injection), SPA fallback to `index.html`
 - **`auth/`** — Password login, token generation (64-char hex, crypto random), user ID derivation (SHA-256 of password, first 16 chars)
 - **`tokenstore/`** — Interface with two implementations: in-memory (volatile) and MongoDB (persistent, TTL configurable via `TOKEN_EXPIRY`)
-- **`clipboard/`** — Per-user in-memory WebSocket connection map; broadcasts `content` and `files_list` messages to all connected clients. Each connection has its own write lock (gorilla allows only one concurrent writer)
+- **`clipboard/`** — Per-user in-memory WebSocket connection map; broadcasts `content` and `files_list` messages to all connected clients. Every content change goes to all clients *including the sender*, tagged with an increasing `version`, so clients can drop out-of-order messages and always converge on the server's text. Each connection has its own write lock (gorilla allows only one concurrent writer); answers `ping` with `pong`
 - **`files/`** — Per-user file storage, tusd integration for resumable uploads, broadcasts file list changes over WebSocket. The list hides tusd `.info`/`.lock` files and uploads still in progress, reports each file's MIME `type` (tus `filetype` metadata → extension → content sniffing), and is sorted newest first
 - **`config/`** — Loads all config from environment variables
 
@@ -79,8 +79,8 @@ helm install my-clipboard clipboard/clipboard -f my-values.yaml    # Deploy
 A single screen (no router): shared text on top, a thumbnail grid of images/files below (side by side on wide screens), and an add bar (Paste / Photos / Camera / Files) that is a fixed bottom dock on phones.
 
 - **`App.tsx`** — Switches between `Login` and `Home` based on the token in `localStorage`
-- **`useSync.ts`** — The one WebSocket: shared text, file list, connection state; reconnects with backoff and immediately when the tab becomes visible or goes online; text edited while offline is pushed on reconnect
-- **`useUploads.ts`** — Upload queue (3 parallel) over tus with local previews; a finished upload hands its preview over once the server's `files_list` includes it
+- **`useSync.ts`** — The one WebSocket: shared text, file list, connection state. Reconnects with backoff, immediately when the tab becomes visible or goes online, and replaces sockets that miss a heartbeat or sat in the background. Ignores stale versions and echoes of its own older keystrokes; edits that never reached the server (offline, or sent into a dead socket) are pushed after reconnecting. The text box is read-only until the first sync
+- **`useUploads.ts`** — Upload queue (3 parallel, oldest first) over tus with local previews; Retry resumes from the server's offset, Cancel/Dismiss deletes the partial upload, and a finished upload hands its preview over once the server's `files_list` includes it
 - **`Home.tsx`** — Layout plus global paste (images upload; text outside the text box replaces the shared text; `text/plain` wins when both are present) and drag-and-drop
 - **`FileViewer.tsx`** — Full-screen preview with Copy image / Share / Download / Delete; pushes a history entry so Back closes it
 - **`clipboard.ts`** — Copy text (iOS-safe `execCommand` path), copy image (as PNG via `ClipboardItem`), read the system clipboard for the Paste button
@@ -110,7 +110,7 @@ A single screen (no router): shared text on top, a thumbnail grid of images/file
 - `GET /api/files/<id>` — Download a file (`Content-Type` from stored metadata)
 - `DELETE /api/files/<id>` — Delete a file
 - `POST/PATCH/HEAD /api/uploads` — tusd resumable upload endpoints (HEAD is authenticated so interrupted uploads can resume)
-- `GET /ws` — WebSocket for real-time clipboard + file-list sync; sends `content` then `files_list` right after connecting
+- `GET /ws` — WebSocket for real-time clipboard + file-list sync; sends `content` (with `version`) then `files_list` right after connecting. Client messages: `update`, `clear`, `ping`
 
 ### Key Integration Points
 

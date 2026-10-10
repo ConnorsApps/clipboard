@@ -86,8 +86,15 @@ export interface UploadCallbacks {
   onError: (error: Error) => void
 }
 
-// uploadFile sends a file with the resumable tus protocol and returns a function that cancels it
-export function uploadFile(file: File, callbacks: UploadCallbacks): () => void {
+export interface UploadHandle {
+  // Starts the upload, or resumes it from where the server has it after an error
+  start: () => void
+  // Stops the upload and deletes what the server has received so far
+  abort: () => void
+}
+
+// createUpload prepares a resumable tus upload of file
+export function createUpload(file: File, callbacks: UploadCallbacks): UploadHandle {
   const metadata: Record<string, string> = { filename: file.name }
   if (file.type) {
     metadata.filetype = file.type
@@ -97,7 +104,9 @@ export function uploadFile(file: File, callbacks: UploadCallbacks): () => void {
     endpoint: '/api/uploads/',
     chunkSize: 5 * 1024 * 1024,
     retryDelays: [0, 1000, 3000, 5000, 10000],
-    removeFingerprintOnSuccess: true,
+    // Resuming works through this Upload object (start() again after an error). Fingerprints
+    // in localStorage would make two copies of the same file share one server upload.
+    storeFingerprintForResuming: false,
     metadata,
     headers: { Authorization: `Bearer ${getToken()}` },
     onProgress: (sent, total) => callbacks.onProgress(total ? sent / total : 0),
@@ -106,23 +115,10 @@ export function uploadFile(file: File, callbacks: UploadCallbacks): () => void {
     onError: callbacks.onError,
   })
 
-  let cancelled = false
-  upload
-    .findPreviousUploads()
-    .then((previous) => {
-      if (cancelled) return
-      if (previous.length > 0) {
-        upload.resumeFromPreviousUpload(previous[0])
-      }
-      upload.start()
-    })
-    .catch(() => {
-      if (!cancelled) upload.start()
-    })
-
-  return () => {
-    cancelled = true
-    // Also delete the partial upload on the server
-    upload.abort(true).catch(() => {})
+  return {
+    start: () => upload.start(),
+    abort: () => {
+      upload.abort(true).catch(() => {})
+    },
   }
 }

@@ -53,14 +53,12 @@ func (m *Manager) HandleWebSocket(getUserID func(string) (string, bool, error), 
 		log.Info().Str("userID", userID).Msg("WebSocket client connected")
 
 		// Send current clipboard content and file list
-		content := s.GetContent()
-		if err := s.Send(conn, WSMessage{Type: "content", Content: content}); err != nil {
-			log.Error().Err(err).Msg("Failed to send initial content")
-		}
+		var files func() interface{}
 		if filesForUser != nil {
-			if err := s.Send(conn, WSMessage{Type: FilesList, Files: filesForUser(userID)}); err != nil {
-				log.Error().Err(err).Msg("Failed to send initial files list")
-			}
+			files = func() interface{} { return filesForUser(userID) }
+		}
+		if err := s.SendInitialState(conn, files); err != nil {
+			log.Error().Err(err).Msg("Failed to send initial state")
 		}
 
 		// Ping goroutine keeps the connection alive through proxies with short idle timeouts
@@ -93,18 +91,17 @@ func (m *Manager) HandleWebSocket(getUserID func(string) (string, bool, error), 
 
 			switch msg.Type {
 			case Update:
-				s.SetContent(msg.Content)
+				s.UpdateContent(msg.Content)
 				log.Debug().Str("userID", userID).Int("length", len(msg.Content)).Msg("Clipboard updated")
 
-				// Broadcast to all clients except sender
-				s.Broadcast(WSMessage{Type: "content", Content: msg.Content}, conn)
-
 			case Clear:
-				s.ClearContent()
+				s.UpdateContent("")
 				log.Info().Str("userID", userID).Msg("Clipboard cleared")
 
-				// Broadcast to all clients including sender
-				s.Broadcast(WSMessage{Type: "content", Content: ""}, nil)
+			case Ping:
+				if err := s.Send(conn, WSMessage{Type: Pong}); err != nil {
+					log.Debug().Err(err).Msg("Failed to send pong")
+				}
 			}
 		}
 

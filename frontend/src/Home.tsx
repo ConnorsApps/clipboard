@@ -38,9 +38,19 @@ function ConnectionBadge({ connection }: { connection: ConnectionState }) {
 }
 
 function Home({ onLogout }: { onLogout: () => void }) {
-  const { content, files, connection, updateContent } = useSync(onLogout)
-  const { uploads, thumbs, add, retry, dismiss } = useUploads(files)
   const { toast, showToast, dismissToast } = useToast()
+  const handleConflict = useCallback(
+    (restore: () => void) =>
+      showToast('Your offline edits replaced newer text from another device', {
+        action: { label: 'Undo', onClick: restore },
+      }),
+    [showToast],
+  )
+  const { content, files, connection, synced, updateContent, getContent } = useSync({
+    onAuthError: onLogout,
+    onConflict: handleConflict,
+  })
+  const { uploads, thumbs, add, retry, dismiss } = useUploads(files)
   const [viewingId, setViewingId] = useState<string | null>(null)
   const [textFocused, setTextFocused] = useState(false)
   const [dragging, setDragging] = useState(false)
@@ -58,7 +68,13 @@ function Home({ onLogout }: { onLogout: () => void }) {
   }
 
   const replaceText = (text: string, message: string) => {
-    const previous = content
+    // Before the first sync, this would overwrite whatever the server has
+    if (!synced) {
+      showToast('Still connecting — try again in a moment', { tone: 'error' })
+      return
+    }
+    // Read now, not from this render: the Paste button awaits the clipboard first
+    const previous = getContent()
     updateContent(text)
     showToast(message, previous ? { action: { label: 'Undo', onClick: () => updateContent(previous) } } : {})
   }
@@ -188,7 +204,11 @@ function Home({ onLogout }: { onLogout: () => void }) {
       setViewingId(null)
     }
     window.addEventListener('popstate', onPop)
-    return () => window.removeEventListener('popstate', onPop)
+    return () => {
+      window.removeEventListener('popstate', onPop)
+      // Logged out with the viewer open: don't leave its entry behind
+      if (historyPushed.current) window.history.back()
+    }
   }, [])
 
   // The open file was deleted on another device
@@ -217,6 +237,7 @@ function Home({ onLogout }: { onLogout: () => void }) {
       <main className="max-w-6xl mx-auto px-4 pt-4 pb-[calc(7rem+env(safe-area-inset-bottom))] md:pb-10 grid gap-6 lg:grid-cols-2 lg:items-start">
         <TextPanel
           value={content}
+          readOnly={!synced}
           onChange={updateContent}
           onClear={() => replaceText('', 'Text cleared')}
           onFocusChange={setTextFocused}
