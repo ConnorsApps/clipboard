@@ -114,6 +114,8 @@ func TestValidation(t *testing.T) {
 		"unknown top-level key":            {"bogus: 1", false},
 		"global added to every subchart":   {"global: {}", true},
 		"global from a parent chart":       {"global: {imageRegistry: example.com}", true},
+		"enabled from a parent condition":  {"enabled: true", true},
+		"enabled must be a boolean":        {"enabled: maybe", false},
 		"typo in nested key":               {"httpRoute: {parentRef: {nmae: gw}}", false},
 		"bad service type":                 {"service: {type: Nope}", false},
 		"port as string":                   {"service: {port: abc}", false},

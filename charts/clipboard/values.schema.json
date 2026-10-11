@@ -772,6 +772,10 @@
       },
       "type": "object"
     },
+    "enabled": {
+      "description": "Only for a parent chart that gates this chart with condition: \u003cname\u003e.enabled, which puts the key here. The chart itself does not read it.",
+      "type": "boolean"
+    },
     "existingSecret": {
       "description": "Name of a Secret with CLIPBOARD_PASSWORDS and optionally MONGODB_URI, used instead of the chart's own. Then config.passwords and config.mongodbUri are ignored.",
       "type": "string"
