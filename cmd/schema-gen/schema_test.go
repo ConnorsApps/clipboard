@@ -112,12 +112,18 @@ func TestValidation(t *testing.T) {
 		ok  bool
 	}{
 		"unknown top-level key":            {"bogus: 1", false},
+		"global added to every subchart":   {"global: {}", true},
+		"global from a parent chart":       {"global: {imageRegistry: example.com}", true},
 		"typo in nested key":               {"httpRoute: {parentRef: {nmae: gw}}", false},
 		"bad service type":                 {"service: {type: Nope}", false},
 		"port as string":                   {"service: {port: abc}", false},
 		"port out of range":                {"service: {port: 70000}", false},
 		"bad pull policy":                  {"image: {pullPolicy: Sometimes}", false},
+		"empty pull policy":                {"image: {pullPolicy: ''}", true},
+		"empty service type":               {"service: {type: ''}", true},
 		"empty image tag":                  {"image: {tag: ''}", false},
+		"numeric image tag from CI":        {"image: {tag: 1234}", true},
+		"float image tag":                  {"image: {tag: 1.10}", false},
 		"bad volume size":                  {"persistence: {size: big}", false},
 		"volume size":                      {"persistence: {size: 50Gi}", true},
 		"bad access mode":                  {"persistence: {accessModes: [ReadWriteTwice]}", false},
@@ -173,5 +179,48 @@ func TestRepoValuesValidate(t *testing.T) {
 				t.Error(err)
 			}
 		})
+	}
+}
+
+// schemaURL is where editors fetch the schema: the generated file on main.
+const schemaURL = "https://raw.githubusercontent.com/ConnorsApps/clipboard/main/charts/clipboard/values.schema.json"
+
+// values.yaml and the README values examples start with a yaml-language-server
+// comment for this schema. A typo there silently turns editor validation off,
+// and an example that doesn't validate teaches the wrong thing.
+func TestSchemaComments(t *testing.T) {
+	schema := compile(t)
+	header := "# yaml-language-server: $schema=" + schemaURL + "\n"
+
+	y, err := os.ReadFile("../../charts/clipboard/values.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(y), header) {
+		t.Errorf("values.yaml must start with %q", strings.TrimSpace(header))
+	}
+
+	fence := regexp.MustCompile("(?s)```yaml\n(.*?)```")
+	for _, f := range []string{"../../README.md", "../../charts/clipboard/README.md"} {
+		md, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		examples := 0
+		for _, m := range fence.FindAllStringSubmatch(string(md), -1) {
+			if !strings.HasPrefix(m[1], "# yaml-language-server:") {
+				continue
+			}
+			examples++
+			if !strings.HasPrefix(m[1], header) {
+				t.Errorf("%s: example has the wrong schema comment: %q", f, strings.SplitN(m[1], "\n", 2)[0])
+			}
+			if err := validateYAML(schema, m[1]); err != nil {
+				t.Errorf("%s: example does not validate: %v", f, err)
+			}
+		}
+		if examples == 0 {
+			t.Errorf("%s: no yaml example with a schema comment", f)
+		}
 	}
 }

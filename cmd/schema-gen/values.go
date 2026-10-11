@@ -9,19 +9,32 @@ import (
 // unknown keys on the chart's own objects, so a key added to values.yaml
 // without a field here fails `helm lint`.
 
+// pullPolicy: "" renders as null, which leaves the field to the cluster default.
 type pullPolicy string
 
 func (pullPolicy) Enum() []any {
-	return []any{string(corev1.PullAlways), string(corev1.PullIfNotPresent), string(corev1.PullNever)}
+	return []any{"", string(corev1.PullAlways), string(corev1.PullIfNotPresent), string(corev1.PullNever)}
 }
 
+// serviceType: "" renders as null, which Kubernetes defaults to ClusterIP.
 type serviceType string
 
 func (serviceType) Enum() []any {
 	return []any{
-		string(corev1.ServiceTypeClusterIP), string(corev1.ServiceTypeNodePort),
+		"", string(corev1.ServiceTypeClusterIP), string(corev1.ServiceTypeNodePort),
 		string(corev1.ServiceTypeLoadBalancer), string(corev1.ServiceTypeExternalName),
 	}
+}
+
+// imageTag is a string, but a CI-supplied `--set image.tag=1234` parses as an
+// integer and the template prints it as is, so both must keep working. A float
+// stays rejected: 1.10 would render as 1.1.
+type imageTag string
+
+func (imageTag) PrepareJSONSchema(s *jsonschema.Schema) error {
+	s.Type = &jsonschema.Type{SliceOfSimpleTypeValues: []jsonschema.SimpleType{jsonschema.String, jsonschema.Integer}}
+	s.WithMinLength(1)
+	return nil
 }
 
 type accessMode string
@@ -66,8 +79,8 @@ func (tokenExpiry) PrepareJSONSchema(s *jsonschema.Schema) error {
 
 type imageValues struct {
 	Repository string     `json:"repository" minLength:"1" description:"Image repository"`
-	Tag        string     `json:"tag" minLength:"1" description:"Image tag. Only :latest is published."`
-	PullPolicy pullPolicy `json:"pullPolicy" description:"Image pull policy. Always, because only :latest is published."`
+	Tag        imageTag   `json:"tag" description:"Image tag. Only :latest is published."`
+	PullPolicy pullPolicy `json:"pullPolicy" description:"Image pull policy. Defaults to Always because only :latest is published. Empty: the cluster default."`
 }
 
 type configValues struct {
@@ -77,7 +90,7 @@ type configValues struct {
 }
 
 type serviceValues struct {
-	Type        serviceType       `json:"type" description:"Kubernetes Service type"`
+	Type        serviceType       `json:"type" description:"Kubernetes Service type. Empty: ClusterIP."`
 	Port        int               `json:"port" minimum:"1" maximum:"65535" description:"Service port. The container always listens on 8080."`
 	Annotations map[string]string `json:"annotations" description:"Service annotations"`
 }
@@ -105,6 +118,7 @@ type persistenceValues struct {
 }
 
 type values struct {
+	Global             map[string]any                `json:"global" description:"Values shared with parent charts. Helm adds this key to every subchart, so it must be allowed; the chart reads none of it."`
 	NameOverride       string                        `json:"nameOverride" pattern:"^([a-z0-9]([-a-z0-9]*[a-z0-9])?)?$" description:"Override the chart name in resource names"`
 	FullnameOverride   string                        `json:"fullnameOverride" pattern:"^([a-z0-9]([-a-z0-9]*[a-z0-9])?)?$" description:"Override the fully qualified resource name. Changing it on an existing release renames the files PVC."`
 	CommonLabels       map[string]string             `json:"commonLabels" description:"Labels added to every object this chart renders"`

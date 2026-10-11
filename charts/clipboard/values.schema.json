@@ -933,6 +933,14 @@
       "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?)?$",
       "type": "string"
     },
+    "global": {
+      "description": "Values shared with parent charts. Helm adds this key to every subchart, so it must be allowed; the chart reads none of it.",
+      "additionalProperties": {},
+      "type": [
+        "object",
+        "null"
+      ]
+    },
     "httpRoute": {
       "description": "Optional Gateway API HTTPRoute",
       "additionalProperties": false,
@@ -1018,8 +1026,9 @@
       "additionalProperties": false,
       "properties": {
         "pullPolicy": {
-          "description": "Image pull policy. Always, because only :latest is published.",
+          "description": "Image pull policy. Defaults to Always because only :latest is published. Empty: the cluster default.",
           "enum": [
+            "",
             "Always",
             "IfNotPresent",
             "Never"
@@ -1034,7 +1043,10 @@
         "tag": {
           "description": "Image tag. Only :latest is published.",
           "minLength": 1,
-          "type": "string"
+          "type": [
+            "string",
+            "integer"
+          ]
         }
       },
       "type": "object"
@@ -1609,8 +1621,9 @@
           "type": "integer"
         },
         "type": {
-          "description": "Kubernetes Service type",
+          "description": "Kubernetes Service type. Empty: ClusterIP.",
           "enum": [
+            "",
             "ClusterIP",
             "NodePort",
             "LoadBalancer",
