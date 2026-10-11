@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/ConnorsApps/clipboard/main/charts/clipboard/values.schema.json
 nameOverride: ""
 fullnameOverride: ""
 commonLabels: {}

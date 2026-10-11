@@ -8,10 +8,12 @@ on:
     branches: [main]
     paths:
       - "charts/**"
+      - "cmd/schema-gen/**"
       - ".github/workflows/release-charts.yml"
   pull_request:
     paths:
       - "charts/**"
+      - "cmd/schema-gen/**"
       - "tests/**"
       - "scripts/helm-test.sh"
       - ".github/workflows/release-charts.yml"
@@ -25,6 +27,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: azure/setup-helm@v5
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: cmd/schema-gen/go.mod
+      # values.schema.json is generated; fail if it is stale.
+      - run: make schema-check
       - run: ./scripts/helm-test.sh
 
   release:

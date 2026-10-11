@@ -15,4 +15,12 @@ done
 # No password must fail to render.
 err="$(helm template t "$CHART" 2>&1 >/dev/null)" && { echo "rendered without a password" >&2; exit 1; }
 grep -q "config.passwords is required" <<<"$err" || { echo "unexpected error: $err" >&2; exit 1; }
+
+# As a subchart, Helm adds the parent's global values, and a parent's
+# `condition: clipboard.enabled` puts enabled here; the closed schema must allow both.
+helm template t "$CHART" -f "$V/00-base.yaml" --set global.example=1 --set enabled=true >/dev/null
+
+# values.schema.json is closed: an unknown key must fail.
+err="$(helm template t "$CHART" -f "$V/00-base.yaml" --set bogus=1 2>&1 >/dev/null)" && { echo "rendered with an unknown value" >&2; exit 1; }
+grep -q "values don't meet the specifications of the schema" <<<"$err" || { echo "unexpected error: $err" >&2; exit 1; }
 echo "ok"

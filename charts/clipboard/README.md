@@ -21,9 +21,11 @@ Several passwords: use a values file (`config.passwords: "one,two"`); in `--set`
 | HTTPRoute | Gateway API; **off by default** (`httpRoute.enabled`) |
 
 All options: [values.yaml](https://github.com/ConnorsApps/clipboard/blob/main/charts/clipboard/values.yaml).
+Helm checks them against [values.schema.json](https://github.com/ConnorsApps/clipboard/blob/main/charts/clipboard/values.schema.json), so a mistyped key fails the install.
 `config.passwords` (or `existingSecret`) is required; the app would otherwise accept `1234`.
 
 ```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/ConnorsApps/clipboard/main/charts/clipboard/values.schema.json
 httpRoute:
   enabled: true
   parentRef: {name: my-gateway, namespace: gateway-system, sectionName: https}
