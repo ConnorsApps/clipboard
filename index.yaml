@@ -2,6 +2,19 @@ apiVersion: v1
 entries:
   clipboard:
   - apiVersion: v2
+    appVersion: 0.1.0
+    created: "2026-10-11T02:06:48.090607912Z"
+    description: Shared clipboard service with WebSocket sync
+    digest: 332bda79d13c71af8d732973be06a8741bb283a632ea3ebc720fa764f4c553fb
+    home: https://github.com/ConnorsApps/clipboard
+    name: clipboard
+    sources:
+    - https://github.com/ConnorsApps/clipboard
+    type: application
+    urls:
+    - https://github.com/ConnorsApps/clipboard/releases/download/clipboard-2.0.1/clipboard-2.0.1.tgz
+    version: 2.0.1
+  - apiVersion: v2
     appVersion: 1.0.0
     created: "2026-10-10T20:11:40.817850408Z"
     description: Shared clipboard service with WebSocket sync
@@ -14,4 +27,4 @@ entries:
     urls:
     - https://github.com/ConnorsApps/clipboard/releases/download/clipboard-2.0.0/clipboard-2.0.0.tgz
     version: 2.0.0
-generated: "2026-10-10T20:11:40.817857101Z"
+generated: "2026-10-11T02:06:48.090615396Z"
