@@ -2,7 +2,7 @@ apiVersion: v2
 name: clipboard
 description: Shared clipboard service with WebSocket sync
 type: application
-version: 2.0.0
+version: 2.0.1
 appVersion: "0.1.0"
 home: https://github.com/ConnorsApps/clipboard
 sources:

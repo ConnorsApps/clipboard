@@ -42,7 +42,7 @@ helm upgrade --install clipboard clipboard/clipboard -n clipboard --create-names
   --set config.passwords='change-me'
 ```
 
-All options: [values.yaml](charts/clipboard/values.yaml).
+All options: [values.yaml](charts/clipboard/values.yaml). Helm checks them against [values.schema.json](charts/clipboard/values.schema.json), so a mistyped key fails the install.
 
 | Value | |
 | --- | --- |
@@ -54,6 +54,7 @@ All options: [values.yaml](charts/clipboard/values.yaml).
 | `httpRoute.*` | Gateway API route, off by default |
 
 ```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/ConnorsApps/clipboard/main/charts/clipboard/values.schema.json
 httpRoute:
   enabled: true
   parentRef: {name: my-gateway, namespace: gateway-system, sectionName: https}
